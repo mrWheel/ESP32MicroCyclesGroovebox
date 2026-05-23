@@ -1,0 +1,430 @@
+# -------------------------------------------------------------------------------
+#
+#-- Version Date: 28-03-2026 -- (dd-mm-eeyy)
+#
+# GitHub Actions workflow: Auto tag and manage GitHub Releases based on a version
+# string found in your PlatformIO firmware source file.
+#
+# Intended use
+# - PlatformIO/embedded projects where the firmware version is defined in source
+#   code (example format below).
+# - On every push to the main/master branch, the workflow reads the version, compares it
+#   to the latest existing semver tag (vX.Y.Z), and (if newer) creates a new tag.
+#
+# Version format expected in source file
+# - The workflow extracts the version from:
+#     <PROGRAM_DIR>/<PROGRAM_SRC>
+#   by searching for a PROG_VERSION line and extracting only:
+#     X.Y.Z (or vX.Y.Z)
+#   from examples like:
+#     const char* PROG_VERSION = "v1.2.3 <and more text ..>";
+#     const char* PROG_VERSION = "1.2.3 <and more text ..>";
+#     const char* PROG_VERSION = v1.2.3 <and more text ..>;
+#
+# Tagging rules
+# - If the extracted version is newer than the latest semver tag in the repo:
+#   - Create and push a Git tag "vX.Y.Z".
+# - If the version change is major, minor, or patch, create/update a GitHub Release.
+#
+# Release-notes rule (important)
+# - When a GitHub Release is created, its body is composed of commit messages
+#   since the previous GitHub Release tag (not since the previous tag).
+# - Example:
+#   - v1.0.0 Release contains commit messages 1..4
+#   - v2.0.0 Release contains commit messages 5..N
+# - Implementation detail:
+#   - The workflow queries GitHub Releases to find the previous release tag,
+#     then runs:
+#       git log <previousReleaseTag>..HEAD --pretty=format:"- %s"
+#
+# Release retention rules
+# - When creating a new patch release vX.Y.Z (Z increases):
+#   - Create/update the release.
+# - When creating a new minor release vX.Y.0 (Y increases):
+#   - Delete patch releases from the previous minor vX.(Y-1).Z where Z>0.
+#   - Keep tags untouched.
+# - When creating a new major release vX.0.0 (X increases):
+#   - Delete minor/patch releases from previous major v(X-1).*.*,
+#     except v(X-1).0.0.
+#   - Keep tags untouched.
+#
+# Required repository settings
+# - Settings -> Actions -> General -> Workflow permissions:
+#   - Set to "Read and write permissions" (contents: write).
+# -------------------------------------------------------------------------------
+
+name: Auto Tag Release
+
+env:
+  PROGRAM_NAME: "ESP32MicroCyclesGroovebox"
+  PROGRAM_SRC: "main.cpp"
+  PROGRAM_DIR: "<src>"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Get version from ${{ env.PROGRAM_SRC }}
+        id: getVersion
+        run: |
+          sourceFile="${{ env.PROGRAM_DIR }}/${{ env.PROGRAM_SRC }}"
+          versionLine=$(grep -m1 'PROG_VERSION' "$sourceFile" || true)
+          rawVersion=$(echo "$versionLine" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)
+          rawVersion="${rawVersion#v}"
+          version=""
+          parseError=""
+
+          if [ -n "$rawVersion" ]; then
+            version="v$rawVersion"
+          fi
+
+          if [ -z "$versionLine" ]; then
+            parseError="No PROG_VERSION line found in $sourceFile."
+          elif [ -z "$version" ]; then
+            parseError="PROG_VERSION line found, but no semantic version (X.Y.Z or vX.Y.Z) was detected."
+          fi
+
+          echo "Detected PROG_VERSION line: $versionLine"
+          echo "Extracted display version: $rawVersion"
+          echo "Extracted tag version: $version"
+          if [ -n "$parseError" ]; then
+            echo "::error::$parseError"
+          fi
+
+          echo "VERSION_RAW=$rawVersion" >> $GITHUB_OUTPUT
+          echo "VERSION_RAW=$rawVersion" >> $GITHUB_ENV
+          echo "VERSION=$version" >> $GITHUB_OUTPUT
+          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "VERSION_PARSE_ERROR=$parseError" >> $GITHUB_OUTPUT
+          echo "VERSION_PARSE_ERROR=$parseError" >> $GITHUB_ENV
+
+      - name: Fetch all tags
+        run: git fetch --tags
+
+      - name: Get latest semver tag
+        id: latestTag
+        run: |
+          latest=$(git tag --sort=-v:refname | grep -E '^v([0-9]+\.){2}[0-9]+$' | head -n 1 || true)
+          echo "Latest tag detected: $latest"
+          echo "LATEST=$latest" >> $GITHUB_OUTPUT
+
+      - name: Compare version
+        id: compareVersion
+        run: |
+          version="${{ steps.getVersion.outputs.VERSION }}"
+          versionParseError="${{ steps.getVersion.outputs.VERSION_PARSE_ERROR }}"
+          latest="${{ steps.latestTag.outputs.LATEST }}"
+
+          echo "Comparing source version $version with latest tag $latest"
+
+          if [ -n "$versionParseError" ]; then
+            echo "::error::$versionParseError"
+            echo "PROCEED=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          if [ -z "$version" ]; then
+            echo "::error::No version found in ${{ env.PROGRAM_DIR }}/${{ env.PROGRAM_SRC }}. Skipping."
+            echo "PROCEED=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          if [ -z "$latest" ]; then
+            echo "No existing tag found. Proceeding."
+            echo "PROCEED=true" >> $GITHUB_ENV
+            echo "MAKE_RELEASE=true" >> $GITHUB_ENV
+            echo "RELEASE_KIND=initial" >> $GITHUB_ENV
+          elif [ "$version" = "$latest" ]; then
+            echo "::warning::Version $version already exists. Skipping."
+            echo "PROCEED=false" >> $GITHUB_ENV
+          elif [ "$(printf '%s\n' "$latest" "$version" | sort -V | head -n 1)" = "$version" ]; then
+            echo "::warning::Version $version is not greater than $latest. Skipping."
+            echo "PROCEED=false" >> $GITHUB_ENV
+          else
+            echo "Version $version is newer than $latest. Proceeding."
+            echo "PROCEED=true" >> $GITHUB_ENV
+            echo "MAKE_RELEASE=true" >> $GITHUB_ENV
+
+            versionMajor=$(echo "$version" | sed -E 's/^v([0-9]+)\..*/\1/')
+            versionMinor=$(echo "$version" | sed -E 's/^v[0-9]+\.([0-9]+)\..*/\1/')
+            versionPatch=$(echo "$version" | sed -E 's/^v[0-9]+\.[0-9]+\.([0-9]+)$/\1/')
+            latestMajor=$(echo "$latest" | sed -E 's/^v([0-9]+)\..*/\1/')
+            latestMinor=$(echo "$latest" | sed -E 's/^v[0-9]+\.([0-9]+)\..*/\1/')
+            latestPatch=$(echo "$latest" | sed -E 's/^v[0-9]+\.[0-9]+\.([0-9]+)$/\1/')
+
+            echo "Parsed version: $versionMajor.$versionMinor.$versionPatch, latest: $latestMajor.$latestMinor.$latestPatch"
+
+            if [ "$versionMajor" -gt "$latestMajor" ]; then
+              echo "Detected major bump."
+              echo "RELEASE_KIND=major" >> $GITHUB_ENV
+            elif [ "$versionMinor" -gt "$latestMinor" ]; then
+              echo "Detected minor bump."
+              echo "RELEASE_KIND=minor" >> $GITHUB_ENV
+            else
+              echo "Detected patch bump."
+              echo "RELEASE_KIND=patch" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: Create and push tag
+        if: env.PROCEED == 'true' && env.VERSION != ''
+        run: |
+          echo "Creating and pushing tag $VERSION"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
+      - name: Determine previous release tag
+        if: env.MAKE_RELEASE == 'true' && env.PROCEED == 'true'
+        id: previousRelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version="${{ env.VERSION }}"
+          repo="${GITHUB_REPOSITORY}"
+
+          echo "Finding previous GitHub Release tag (excluding $version)."
+
+          releasesJson=$(curl -sS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$repo/releases?per_page=100")
+
+          previousReleaseTag=$(
+            echo "$releasesJson" \
+              | jq -r '.[].tag_name' \
+              | grep -E '^v([0-9]+\.){2}[0-9]+$' \
+              | grep -v -F "$version" \
+              | sort -V \
+              | tail -n 1 \
+              || true
+          )
+
+          if [ -z "$previousReleaseTag" ]; then
+            echo "No previous GitHub Release tag found. This will be treated as the first release."
+          else
+            echo "Previous GitHub Release tag: $previousReleaseTag"
+          fi
+
+          echo "PREVIOUS_RELEASE_TAG=$previousReleaseTag" >> $GITHUB_OUTPUT
+          echo "PREVIOUS_RELEASE_TAG=$previousReleaseTag" >> $GITHUB_ENV
+
+      - name: Cleanup outdated releases (keep tags)
+        if: env.MAKE_RELEASE == 'true' && env.PROCEED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version="${{ env.VERSION }}"
+          releaseKind="${{ env.RELEASE_KIND }}"
+          repo="${GITHUB_REPOSITORY}"
+
+          versionMajor=$(echo "$version" | sed -E 's/^v([0-9]+)\..*/\1/')
+          versionMinor=$(echo "$version" | sed -E 's/^v[0-9]+\.([0-9]+)\..*/\1/')
+          previousMajor=$((versionMajor - 1))
+          previousMinor=$((versionMinor - 1))
+
+          echo "Current version is $version (major=$versionMajor minor=$versionMinor, kind=$releaseKind)"
+
+          if [ "$releaseKind" = "patch" ] || [ "$releaseKind" = "initial" ]; then
+            echo "No cleanup needed for release kind '$releaseKind'."
+            echo "DELETED_RELEASE_START_TAG=" >> $GITHUB_OUTPUT
+            echo "DELETED_RELEASE_START_TAG=" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          releasesJson=$(curl -sS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$repo/releases?per_page=100")
+
+          releaseCount=$(echo "$releasesJson" | jq 'length')
+          echo "Fetched $releaseCount releases."
+
+          releaseIdsToDelete=()
+          deletedReleaseTags=()
+
+          if [ "$releaseKind" = "major" ]; then
+            echo "Deleting minor/patch releases from previous major v$previousMajor.*.* (keeping v$previousMajor.0.0)."
+            while IFS=$'\t' read -r tagName releaseId; do
+              if [[ "$tagName" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                tagMajor="${BASH_REMATCH[1]}"
+                tagMinor="${BASH_REMATCH[2]}"
+                tagPatch="${BASH_REMATCH[3]}"
+                if [ "$tagMajor" -eq "$previousMajor" ] && ! { [ "$tagMinor" -eq 0 ] && [ "$tagPatch" -eq 0 ]; }; then
+                  echo "Scheduled for deletion: release tag $tagName (releaseId=$releaseId)"
+                  releaseIdsToDelete+=("$releaseId")
+                  deletedReleaseTags+=("$tagName")
+                fi
+              fi
+            done < <(echo "$releasesJson" | jq -r '.[] | [.tag_name, .id] | @tsv')
+
+          elif [ "$releaseKind" = "minor" ]; then
+            echo "Deleting patch releases from previous minor v$versionMajor.$previousMinor.Z (Z>0)."
+            while IFS=$'\t' read -r tagName releaseId; do
+              if [[ "$tagName" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+                tagMajor="${BASH_REMATCH[1]}"
+                tagMinor="${BASH_REMATCH[2]}"
+                tagPatch="${BASH_REMATCH[3]}"
+                if [ "$tagMajor" -eq "$versionMajor" ] && [ "$tagMinor" -eq "$previousMinor" ] && [ "$tagPatch" -gt 0 ]; then
+                  echo "Scheduled for deletion: release tag $tagName (releaseId=$releaseId)"
+                  releaseIdsToDelete+=("$releaseId")
+                  deletedReleaseTags+=("$tagName")
+                fi
+              fi
+            done < <(echo "$releasesJson" | jq -r '.[] | [.tag_name, .id] | @tsv')
+          fi
+
+          if [ "${#releaseIdsToDelete[@]}" -eq 0 ]; then
+            echo "No releases matched the cleanup rules."
+            echo "DELETED_RELEASE_START_TAG=" >> $GITHUB_OUTPUT
+            echo "DELETED_RELEASE_START_TAG=" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          deletedStartTag=$(printf '%s\n' "${deletedReleaseTags[@]}" | sort -V | head -n 1 || true)
+          echo "Earliest deleted release tag: $deletedStartTag"
+          echo "DELETED_RELEASE_START_TAG=$deletedStartTag" >> $GITHUB_OUTPUT
+          echo "DELETED_RELEASE_START_TAG=$deletedStartTag" >> $GITHUB_ENV
+
+          for releaseId in "${releaseIdsToDelete[@]}"; do
+            echo "Deleting GitHub Release id=$releaseId (tags will be kept)."
+            curl -sS -X DELETE \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$repo/releases/$releaseId" >/dev/null
+          done
+
+          echo "Cleanup completed. All tags were preserved."
+
+      - name: Generate release notes
+        if: env.MAKE_RELEASE == 'true' && env.PROCEED == 'true'
+        id: releaseNotes
+        run: |
+          set -euo pipefail
+
+          version="${{ env.VERSION }}"
+          versionRaw="${{ env.VERSION_RAW }}"
+          previousReleaseTag="${{ env.PREVIOUS_RELEASE_TAG }}"
+          deletedReleaseStartTag="${{ env.DELETED_RELEASE_START_TAG }}"
+          baseTag=""
+
+          echo "Generating release notes for $version (display: $versionRaw)"
+          echo "## Changes" > release_notes.txt
+          echo "" >> release_notes.txt
+
+          if [ -n "$deletedReleaseStartTag" ]; then
+            baseTag="$deletedReleaseStartTag"
+            echo "Using earliest deleted release tag as base: $baseTag"
+          elif [ -n "$previousReleaseTag" ]; then
+            baseTag="$previousReleaseTag"
+            echo "Using previous release tag as base: $baseTag"
+          fi
+
+          if [ -z "$baseTag" ]; then
+            echo "No base release tag found. Including recent commits (max 20)."
+            git log --pretty=format:"- %s" | head -n 20 > commits.txt
+            echo "" >> release_notes.txt
+            if [ -s commits.txt ]; then
+              cat commits.txt >> release_notes.txt
+            else
+              echo "- No commit messages found." >> release_notes.txt
+            fi
+            echo "" >> release_notes.txt
+            echo "_First release._" >> release_notes.txt
+          else
+            echo "Including commits since $baseTag."
+            echo "### Changes since $baseTag" >> release_notes.txt
+            echo "" >> release_notes.txt
+            git log ${baseTag}..HEAD --pretty=format:"- %s" > commits.txt
+            if [ -s commits.txt ]; then
+              cat commits.txt >> release_notes.txt
+            else
+              echo "- No commit messages found since $baseTag." >> release_notes.txt
+            fi
+          fi
+
+          echo "Release notes file created."
+
+      - name: Show generated release notes
+        if: env.MAKE_RELEASE == 'true' && env.PROCEED == 'true'
+        run: |
+          echo "Generated release notes (release_notes.txt):"
+          echo "----------------------------------------"
+          cat release_notes.txt
+          echo "----------------------------------------"
+
+      - name: Create or update GitHub Release
+        if: env.MAKE_RELEASE == 'true' && env.PROCEED == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          repo="${GITHUB_REPOSITORY}"
+          versionTag="${{ env.VERSION }}"
+          versionRaw="${{ env.VERSION_RAW }}"
+          releaseName="Release $versionRaw"
+          releaseBody=$(cat release_notes.txt)
+
+          echo "Creating/updating GitHub Release for tag $versionTag"
+
+          statusCode=$(curl -sS -o current_release.json -w "%{http_code}" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$repo/releases/tags/$versionTag")
+
+          if [ "$statusCode" = "200" ]; then
+            releaseId=$(jq -r '.id' current_release.json)
+            payload=$(jq -n \
+              --arg name "$releaseName" \
+              --arg body "$releaseBody" \
+              '{name: $name, body: $body, draft: false, prerelease: false}')
+
+            curl -sS -X PATCH \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$repo/releases/$releaseId" \
+              -d "$payload" >/dev/null
+
+            echo "Updated existing GitHub Release id=$releaseId"
+          elif [ "$statusCode" = "404" ]; then
+            payload=$(jq -n \
+              --arg tag "$versionTag" \
+              --arg name "$releaseName" \
+              --arg body "$releaseBody" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
+
+            curl -sS -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/$repo/releases" \
+              -d "$payload" >/dev/null
+
+            echo "Created new GitHub Release for $versionTag"
+          else
+            echo "::error::Failed to query release by tag $versionTag (HTTP $statusCode)."
+            cat current_release.json
+            exit 1
+          fi

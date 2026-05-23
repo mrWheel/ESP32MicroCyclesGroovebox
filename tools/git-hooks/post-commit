@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+#
+#-- Version Date: 12-05-2026 -- (dd-mm-eeyy)
+#
+python3 tools/git-hooks/bumpProgVersion.py
+
+# Stage any changes from bumpProgVersion for the next commit
+git add -A tools/PROG_VERSION.json include/appConfig.h src/main.cpp 2>/dev/null || true
