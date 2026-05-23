@@ -279,6 +279,7 @@ MAC
  Load sequence
  Save sequence
  New sequence
+ Delete sequence
  Erase WiFi Credentials
  Start WiFi Manager
  Set theme (Red, Blue, Green enz.)
@@ -288,9 +289,14 @@ MAC
  Exit 
 ```
 
-```Load sequence``` shows list of sequences on LittleFS Mideum push selects and loads.
+```Load sequence``` shows list of sequences on LittleFS Midium/Long push selects and loads
+ the sequence under the cursor.
+ 
 ```Save squence``` saves active sequence
+
 ```New sequence``` creates new (empty) sequence and asks for its name
+
+```Delete seuence``` shows list of sequences on LittleFS and Medium/Long push deletes the sequence under the cursor.
 
 Requirements:
 
