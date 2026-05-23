@@ -276,14 +276,21 @@ SSID
 IP
 MAC
 
+ Load sequence
+ Save sequence
+ New sequence
  Erase WiFi Credentials
  Start WiFi Manager
  Set theme (Red, Blue, Green enz.)
  Rotate Display (toggle between 1 and 3)
  Encoder Order (A-B / B-A)
- Restart GrooveBox
+ Restart Groovebox
  Exit 
 ```
+
+```Load sequence``` shows list of sequences on LittleFS Mideum push selects and loads.
+```Save squence``` saves active sequence
+```New sequence``` creates new (empty) sequence and asks for its name
 
 Requirements:
 
