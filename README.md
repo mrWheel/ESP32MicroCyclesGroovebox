@@ -281,6 +281,7 @@ MAC
  Set theme (Red, Blue, Green enz.)
  Rotate Display (toggle between 1 and 3)
  Encoder Order (A-B / B-A)
+ Restart GrooveBox
  Exit 
 ```
 
