@@ -342,7 +342,7 @@ jobs:
 
           if [ -z "$baseTag" ]; then
             echo "No base release tag found. Including recent commits (max 20)."
-            git log --pretty=format:"- %s" | head -n 20 > commits.txt
+            git log -n 20 --pretty=format:"- %s" > commits.txt
             echo "" >> release_notes.txt
             if [ -s commits.txt ]; then
               cat commits.txt >> release_notes.txt
