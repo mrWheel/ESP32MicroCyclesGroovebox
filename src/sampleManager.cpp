@@ -1,13 +1,9 @@
-/*** Last Changed: 2026-05-24 - 11:12 ***/
+/*** Last Changed: 2026-05-24 - 16:40 ***/
 #include "sampleManager.h"
+#include "appConfig.h"
 
-#include "sampleCh.h"
-#include "sampleKick.h"
-#include "sampleMetal.h"
-#include "sampleOh.h"
-#include "sampleSnare.h"
-#include "sampleTone.h"
-
+#include <SD.h>
+#include <SPI.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <math.h>
@@ -27,11 +23,10 @@ struct FmtChunk
   uint16_t bitsPerSample;
 };
 
-//-- Embedded WAV source descriptor.
+//-- SD sample source descriptor.
 struct SampleSource
 {
-  const uint8_t* wavBytes;
-  size_t wavSize;
+  const char* path;
   const char* name;
 };
 
@@ -41,15 +36,18 @@ static SampleSlot sampleSlots[sampleCount];
 //-- Synthetic fallback waveforms.
 static int16_t fallbackSamples[sampleCount][512];
 
-//-- Embedded sample mapping for required tracks.
+//-- SD sample mapping for required tracks.
 static const SampleSource sampleSources[sampleCount] =
     {
-        {sampleKickWavBytes, sampleKickWavSize, "kick"},
-        {sampleSnareWavBytes, sampleSnareWavSize, "snare"},
-        {sampleChWavBytes, sampleChWavSize, "ch"},
-        {sampleOhWavBytes, sampleOhWavSize, "oh"},
-        {sampleToneWavBytes, sampleToneWavSize, "tone"},
-        {sampleMetalWavBytes, sampleMetalWavSize, "metal"}};
+        {"/samples/kick.wav", "kick"},
+        {"/samples/snare.wav", "snare"},
+        {"/samples/ch.wav", "ch"},
+        {"/samples/oh.wav", "oh"},
+        {"/samples/tone.wav", "tone"},
+        {"/samples/metal.wav", "metal"}};
+
+//-- True when SD card mount succeeded.
+static bool sdCardReady = false;
 
 //-- Read little-endian 16-bit value.
 static uint16_t readLe16(const uint8_t* data)
@@ -235,23 +233,131 @@ static bool readMonoSampleFromBuffer(const uint8_t* pcmData, uint32_t dataSize, 
 
 } //   readMonoSampleFromBuffer()
 
-//-- Decode one embedded WAV source into sample slot storage.
-static bool loadSampleFromInclude(uint8_t sampleIndex)
+//-- Initialize SD card on configured pins.
+static bool initSdCard()
+{
+  static const uint32_t initFrequenciesHz[] = {400000U, 1000000U, 4000000U};
+
+  // Shared SPI bus with TFT: deselect both devices before mounting SD.
+  pinMode(PIN_TFT_CS, OUTPUT);
+  digitalWrite(PIN_TFT_CS, HIGH);
+  pinMode(PIN_SD_CS, OUTPUT);
+  digitalWrite(PIN_SD_CS, HIGH);
+  pinMode(PIN_SD_MISO, INPUT_PULLUP);
+
+  SPI.end();
+  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+
+  // Let board-level pull-ups and CS lines settle.
+  delay(20);
+
+  // Send dummy clocks with CS high so cards reliably enter SPI mode.
+  SPI.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
+
+  for (uint8_t dummyIndex = 0; dummyIndex < 16; dummyIndex++)
+  {
+    (void)SPI.transfer(0xFF);
+  }
+
+  SPI.endTransaction();
+
+  for (size_t attemptIndex = 0; attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
+  {
+    uint32_t initFrequency = initFrequenciesHz[attemptIndex];
+
+    SD.end();
+
+    ESP_LOGI(logTag,
+             "SD init attempt %u at %luHz",
+             static_cast<unsigned>(attemptIndex + 1),
+             static_cast<unsigned long>(initFrequency));
+
+    if (SD.begin(PIN_SD_CS, SPI, initFrequency))
+    {
+      uint8_t cardType = SD.cardType();
+
+      if (cardType != CARD_NONE)
+      {
+        ESP_LOGI(logTag,
+                 "SD card ready (freq=%luHz, CS=%d SCK=%d MISO=%d MOSI=%d)",
+                 static_cast<unsigned long>(initFrequency),
+                 PIN_SD_CS,
+                 PIN_SD_SCK,
+                 PIN_SD_MISO,
+                 PIN_SD_MOSI);
+        return true;
+      }
+    }
+
+    delay(8);
+  }
+
+  ESP_LOGW(logTag,
+           "SD mount failed (CS=%d SCK=%d MISO=%d MOSI=%d)",
+           PIN_SD_CS,
+           PIN_SD_SCK,
+           PIN_SD_MISO,
+           PIN_SD_MOSI);
+  return false;
+
+} //   initSdCard()
+
+//-- Decode one WAV file from SD into sample slot storage.
+static bool loadSampleFromSd(uint8_t sampleIndex)
 {
   const SampleSource& source = sampleSources[sampleIndex];
   FmtChunk fmtChunk = {};
+  uint8_t* wavBytes = nullptr;
+  size_t wavSize = 0;
   const uint8_t* pcmData = nullptr;
   uint32_t dataSize = 0;
+  File wavFile;
 
-  if (source.wavBytes == nullptr || source.wavSize < 12)
+  wavFile = SD.open(source.path, FILE_READ);
+
+  if (!wavFile)
   {
-    ESP_LOGW(logTag, "Embedded WAV missing: %s", source.name);
+    ESP_LOGW(logTag, "Missing SD sample: %s (%s)", source.name, source.path);
     return false;
   }
 
-  if (!parseWavLayout(source.wavBytes, source.wavSize, fmtChunk, pcmData, dataSize))
+  wavSize = static_cast<size_t>(wavFile.size());
+
+  if (wavSize < 12)
   {
-    ESP_LOGW(logTag, "Invalid embedded WAV layout: %s", source.name);
+    ESP_LOGW(logTag, "Invalid/empty SD WAV: %s (%s)", source.name, source.path);
+    wavFile.close();
+    return false;
+  }
+
+  wavBytes = static_cast<uint8_t*>(heap_caps_malloc(wavSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+
+  if (wavBytes == nullptr)
+  {
+    wavBytes = static_cast<uint8_t*>(heap_caps_malloc(wavSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+
+  if (wavBytes == nullptr)
+  {
+    ESP_LOGE(logTag, "Out of memory reading SD WAV: %s", source.name);
+    wavFile.close();
+    return false;
+  }
+
+  size_t bytesRead = static_cast<size_t>(wavFile.read(wavBytes, wavSize));
+  wavFile.close();
+
+  if (bytesRead != wavSize)
+  {
+    ESP_LOGW(logTag, "Short read for SD WAV: %s", source.name);
+    free(wavBytes);
+    return false;
+  }
+
+  if (!parseWavLayout(wavBytes, wavSize, fmtChunk, pcmData, dataSize))
+  {
+    ESP_LOGW(logTag, "Invalid SD WAV layout: %s", source.name);
+    free(wavBytes);
     return false;
   }
 
@@ -270,6 +376,7 @@ static bool loadSampleFromInclude(uint8_t sampleIndex)
              static_cast<unsigned>(fmtChunk.numChannels),
              static_cast<unsigned>(fmtChunk.bitsPerSample),
              static_cast<unsigned long>(fmtChunk.sampleRate));
+    free(wavBytes);
     return false;
   }
 
@@ -278,7 +385,8 @@ static bool loadSampleFromInclude(uint8_t sampleIndex)
 
   if (inputFrameCount == 0)
   {
-    ESP_LOGW(logTag, "Embedded WAV is empty: %s", source.name);
+    ESP_LOGW(logTag, "SD WAV has no audio frames: %s", source.name);
+    free(wavBytes);
     return false;
   }
 
@@ -305,7 +413,8 @@ static bool loadSampleFromInclude(uint8_t sampleIndex)
 
   if (sampleData == nullptr)
   {
-    ESP_LOGE(logTag, "Out of memory for embedded sample: %s", source.name);
+    ESP_LOGE(logTag, "Out of memory for SD sample: %s", source.name);
+    free(wavBytes);
     return false;
   }
 
@@ -351,10 +460,13 @@ static bool loadSampleFromInclude(uint8_t sampleIndex)
 
   if (!decodeOk)
   {
-    ESP_LOGW(logTag, "Failed to decode embedded WAV data: %s", source.name);
+    ESP_LOGW(logTag, "Failed to decode SD WAV data: %s", source.name);
     free(sampleData);
+    free(wavBytes);
     return false;
   }
+
+  free(wavBytes);
 
   sampleSlots[sampleIndex].data = sampleData;
   sampleSlots[sampleIndex].frameCount = outputFrameCount;
@@ -363,18 +475,25 @@ static bool loadSampleFromInclude(uint8_t sampleIndex)
   sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
 
   ESP_LOGI(logTag,
-           "Loaded embedded sample %s (%lu frames, %s)",
+           "Loaded SD sample %s (%lu frames, %s)",
            sampleSlots[sampleIndex].name,
            static_cast<unsigned long>(outputFrameCount),
            sampleStoredInInternalRam ? "internal RAM" : "PSRAM");
 
   return true;
 
-} //   loadSampleFromInclude()
+} //   loadSampleFromSd()
 
-//-- Initialize sample pool and decode all embedded sample WAV headers.
+//-- Initialize sample pool and load WAV files from SD.
 bool sampleManagerInit()
 {
+  sdCardReady = initSdCard();
+
+  if (!sdCardReady)
+  {
+    ESP_LOGW(logTag, "SD unavailable, all tracks use fallback waveforms");
+  }
+
   for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
   {
     sampleSlots[sampleIndex].data = fallbackSamples[sampleIndex];
@@ -384,7 +503,7 @@ bool sampleManagerInit()
     sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
     buildFallbackSample(sampleIndex);
 
-    if (!loadSampleFromInclude(sampleIndex))
+    if (sdCardReady && !loadSampleFromSd(sampleIndex))
     {
       ESP_LOGW(logTag, "Using fallback sample for %s", sampleSlots[sampleIndex].name);
     }

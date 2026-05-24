@@ -1,7 +1,9 @@
-/*** Last Changed: 2026-05-24 - 15:06 ***/
+/*** Last Changed: 2026-05-24 - 16:40 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <SD.h>
+#include <SPI.h>
 
 #include "DisplayDriverClass.h"
 #include "InputClass.h"
@@ -15,7 +17,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.2.1";
+const char* PROG_VERSION = "v0.3.0";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -37,6 +39,142 @@ static bool audioTaskStarted = false;
 static bool uiTaskStarted = false;
 static bool inputTaskStarted = false;
 static bool systemTaskStarted = false;
+
+//-- Run isolated SD smoke test and stop firmware startup.
+#ifdef SD_SMOKE_TEST
+static void runSdSmokeTestAndHalt()
+{
+  static const uint32_t initFrequenciesHz[] = {400000U, 1000000U, 4000000U};
+
+  ESP_LOGI(logTag,
+           "SD smoke test pins: CS=%d SCK=%d MISO=%d MOSI=%d",
+           PIN_SD_CS,
+           PIN_SD_SCK,
+           PIN_SD_MISO,
+           PIN_SD_MOSI);
+
+  pinMode(PIN_TFT_CS, OUTPUT);
+  digitalWrite(PIN_TFT_CS, HIGH);
+  pinMode(PIN_SD_CS, OUTPUT);
+  digitalWrite(PIN_SD_CS, HIGH);
+  pinMode(PIN_SD_MISO, INPUT_PULLUP);
+
+  SPI.end();
+  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  delay(20);
+
+  SPI.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
+
+  for (uint8_t dummyIndex = 0; dummyIndex < 16; dummyIndex++)
+  {
+    (void)SPI.transfer(0xFF);
+  }
+
+  SPI.endTransaction();
+
+  bool mountOk = false;
+
+  for (size_t attemptIndex = 0; attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
+  {
+    uint32_t initFrequency = initFrequenciesHz[attemptIndex];
+    ESP_LOGI(logTag,
+             "SD smoke init attempt %u at %luHz",
+             static_cast<unsigned>(attemptIndex + 1),
+             static_cast<unsigned long>(initFrequency));
+
+    SD.end();
+
+    if (SD.begin(PIN_SD_CS, SPI, initFrequency))
+    {
+      mountOk = true;
+      break;
+    }
+
+    delay(8);
+  }
+
+  if (!mountOk)
+  {
+    ESP_LOGE(logTag, "SD smoke test: mount failed");
+
+    for (;;)
+    {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
+
+  uint8_t cardType = SD.cardType();
+  uint64_t cardSizeMb = static_cast<uint64_t>(SD.cardSize()) / (1024ULL * 1024ULL);
+
+  ESP_LOGI(logTag,
+           "SD smoke test: mount OK, cardType=%u, cardSizeMB=%llu",
+           static_cast<unsigned>(cardType),
+           static_cast<unsigned long long>(cardSizeMb));
+
+  File rootDir = SD.open("/");
+
+  if (!rootDir || !rootDir.isDirectory())
+  {
+    ESP_LOGE(logTag, "SD smoke test: failed to open root directory");
+  }
+  else
+  {
+    ESP_LOGI(logTag, "SD smoke test: root directory listing");
+
+    while (true)
+    {
+      File entry = rootDir.openNextFile();
+
+      if (!entry)
+      {
+        break;
+      }
+
+      ESP_LOGI(logTag,
+               "  %s (%s, %lu bytes)",
+               entry.name(),
+               entry.isDirectory() ? "dir" : "file",
+               static_cast<unsigned long>(entry.size()));
+
+      entry.close();
+    }
+  }
+
+  const char* samplePaths[] = {
+      "/samples/kick.wav",
+      "/samples/snare.wav",
+      "/samples/ch.wav",
+      "/samples/oh.wav",
+      "/samples/tone.wav",
+      "/samples/metal.wav"};
+
+  for (size_t sampleIndex = 0; sampleIndex < (sizeof(samplePaths) / sizeof(samplePaths[0])); sampleIndex++)
+  {
+    const char* samplePath = samplePaths[sampleIndex];
+    File sampleFile = SD.open(samplePath, FILE_READ);
+
+    if (!sampleFile)
+    {
+      ESP_LOGW(logTag, "SD smoke test: missing %s", samplePath);
+      continue;
+    }
+
+    ESP_LOGI(logTag,
+             "SD smoke test: found %s (%lu bytes)",
+             samplePath,
+             static_cast<unsigned long>(sampleFile.size()));
+    sampleFile.close();
+  }
+
+  ESP_LOGI(logTag, "SD smoke test done. Firmware halted.");
+
+  for (;;)
+  {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+
+} //   runSdSmokeTestAndHalt()
+#endif
 
 //-- Warn when critical pin assignments overlap.
 static void logPinConflictWarnings()
@@ -193,6 +331,11 @@ void setup()
   ESP_LOGI(logTag, "I2S pins: BCLK=%d WS=%d DOUT=%d", PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT);
   logPinConflictWarnings();
 
+#ifdef SD_SMOKE_TEST
+  runSdSmokeTestAndHalt();
+  return;
+#endif
+
 #ifdef NO_DAC_HARDWARE
   ESP_LOGW(logTag, "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");
 #endif
@@ -200,14 +343,15 @@ void setup()
   inputQueue = xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
 
   input.begin();
-  displayInit();
-  display.drawMessage("ESP32 Groovebox", PROG_VERSION);
-  sequencerInit();
 
   if (!sampleManagerInit())
   {
     ESP_LOGW(logTag, "Sample manager init failed, using fallback waveforms");
   }
+
+  displayInit();
+  display.drawMessage("ESP32 Groovebox", PROG_VERSION);
+  sequencerInit();
 
   settingsStoreLoadRuntimeSettings(runtimeSettings);
   displaySetRotation(static_cast<int>(runtimeSettings.displayRotation));

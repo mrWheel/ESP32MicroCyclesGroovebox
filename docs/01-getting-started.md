@@ -29,6 +29,6 @@ At startup the Groovebox:
 
 ## Good To Know
 
-- Sample content is embedded in firmware.
-- You do not need to upload `/data/samples` for normal use.
+- Samples are loaded from SD card files in `/samples`.
+- Required files are: `kick.wav`, `snare.wav`, `ch.wav`, `oh.wav`, `tone.wav`, `metal.wav`.
 - If `TEST_TONE` is enabled, you will hear a test sine tone instead of drums.

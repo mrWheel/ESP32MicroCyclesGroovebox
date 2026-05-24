@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 11:12 ***/
+/*** Last Changed: 2026-05-24 - 16:40 ***/
 #ifndef SAMPLE_MANAGER_H
 #define SAMPLE_MANAGER_H
 
@@ -26,7 +26,7 @@ struct SampleSlot
   char name[16];
 };
 
-//-- Initialize LittleFS and preload samples.
+//-- Initialize SD card and load samples.
 bool sampleManagerInit();
 
 //-- Get sample slot by identifier.

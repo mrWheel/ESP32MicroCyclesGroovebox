@@ -2,6 +2,12 @@
 
 This repository contains firmware for the ESP32 MicroCycles Groovebox on the R3 hardware revision.
 
+## Developer Guide
+
+For a full from-scratch developer setup and rebuild workflow, read:
+
+- [DEVELOPER_FROM_SCRATCH.md](DEVELOPER_FROM_SCRATCH.md)
+
 ## User Manual
 
 The end-user manual is in the docs folder.
@@ -16,7 +22,7 @@ The end-user manual is in the docs folder.
 - 16-step sequencer
 - Sequence load/save/new/delete from System Settings
 - Optional Wi-Fi setup from System Settings
-- Embedded sample set in firmware (no sample file upload required)
+- SD card sample set from `/samples/*.wav`
 
 ## Build Environment
 

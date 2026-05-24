@@ -2,7 +2,7 @@
 
 ## Samples
 
-The Groovebox ships with built-in embedded samples:
+The Groovebox reads samples from SD card files:
 
 - Kick
 - Snare
@@ -11,9 +11,14 @@ The Groovebox ships with built-in embedded samples:
 - Tone
 - Metal
 
-This means:
+Required paths on SD card:
 
-- No manual sample file upload is required for normal playback.
+- `/samples/kick.wav`
+- `/samples/snare.wav`
+- `/samples/ch.wav`
+- `/samples/oh.wav`
+- `/samples/tone.wav`
+- `/samples/metal.wav`
 
 ## Sequence Storage
 

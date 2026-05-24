@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-23 - 13:42 ***/
+/*** Last Changed: 2026-05-24 - 16:40 ***/
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
@@ -55,6 +55,22 @@
 
 #ifndef PIN_RESET
 #define PIN_RESET 35
+#endif
+
+#ifndef PIN_SD_CS
+#define PIN_SD_CS 13
+#endif
+
+#ifndef PIN_SD_SCK
+#define PIN_SD_SCK 18
+#endif
+
+#ifndef PIN_SD_MISO
+#define PIN_SD_MISO 19
+#endif
+
+#ifndef PIN_SD_MOSI
+#define PIN_SD_MOSI 23
 #endif
 
 #ifndef TFT_WIDTH

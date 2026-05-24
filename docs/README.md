@@ -23,3 +23,7 @@ This manual is written for the R3 Groovebox hardware and for daily use.
 ## Important
 
 This manual is intentionally practical and user-focused.
+
+For full developer setup and rebuild instructions, see:
+
+- [../DEVELOPER_FROM_SCRATCH.md](../DEVELOPER_FROM_SCRATCH.md)
