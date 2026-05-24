@@ -58,7 +58,7 @@ name: Auto Tag Release
 env:
   PROGRAM_NAME: "ESP32MicroCyclesGroovebox"
   PROGRAM_SRC: "main.cpp"
-  PROGRAM_DIR: "<src>"
+  PROGRAM_DIR: "src"
 
 on:
   push:
