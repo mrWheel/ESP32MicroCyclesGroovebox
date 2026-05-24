@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`DisplayDriver` is the reusable hardware-facing display layer for the current ST7789-based 2.4 inch SPI TFT panel.
+`DisplayDriverClass` is the reusable hardware-facing display layer for the current ST7789-based 2.4 inch SPI TFT panel.
 It is designed to be copied into other projects that use the same display hardware, while keeping application-specific logic outside the class.
 
 The class focuses on:
@@ -24,7 +24,7 @@ The current class implementation includes the following recent updates:
 - List drawing style is now standardized as:
   - selected row: `>item<`
   - non-selected row: one leading space before item text
-- The public class API in [include/DisplayDriver.h](include/DisplayDriver.h) is now the authoritative source.
+- The public class API in [include/DisplayDriverClass.h](include/DisplayDriverClass.h) is now the authoritative source.
   - This document reflects that API and should be updated together with header changes.
 
 The status screen is also supported, but only through a precomputed view-model.
@@ -276,7 +276,7 @@ Reuse `drawButton()` whenever you need a button that should match the rest of th
 ## Example
 
 ```cpp
-#include "DisplayDriver.h"
+#include "DisplayDriverClass.h"
 
 void setup()
 {

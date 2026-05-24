@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-23 - 17:35 ***/
+/*** Last Changed: 2026-05-24 - 10:40 ***/
 #ifndef SYSTEM_MANAGER_H
 #define SYSTEM_MANAGER_H
 

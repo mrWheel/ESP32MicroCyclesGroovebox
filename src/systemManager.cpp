@@ -1,7 +1,7 @@
-/*** Last Changed: 2026-05-23 - 17:35 ***/
+/*** Last Changed: 2026-05-24 - 10:40 ***/
 #include "systemManager.h"
 
-#include "WiFiManagerExt.h"
+#include "WiFiManagerExtClass.h"
 #include "appConfig.h"
 
 #include <ArduinoJson.h>

@@ -1,9 +1,9 @@
-/*** Last Changed: 2026-05-23 - 16:00 ***/
+/*** Last Changed: 2026-05-24 - 10:40 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 
-#include "DisplayDriver.h"
+#include "DisplayDriverClass.h"
 #include "InputClass.h"
 #include "audioEngine.h"
 #include "sampleManager.h"
@@ -14,7 +14,7 @@
 #include "appConfig.h"
 
 //-- PROG_VERSION.
-static const char* PROG_VERSION = "v0.0.1";
+static const char* PROG_VERSION = "v0.1.0";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";

@@ -13,7 +13,7 @@ ESP32 MicroCycles Groovebox project.
 | [DisplayDriverClass.md](DisplayDriverClass.md) | Technical and API documentation for the reusable display driver class |
 | [InputClass.md](InputClass.md) | Technical and API documentation for the reusable encoder + auxiliary button input class |
 | [WifiSettings.md](WifiSettings.md) | Technical and API documentation for the reusable WiFi settings struct |
-| [WiFiManagerExt.md](WiFiManagerExt.md) | Technical and API documentation for the reusable WiFi manager class |
+| [WiFiManagerExtClass.md](WiFiManagerExtClass.md) | Technical and API documentation for the reusable WiFi manager class |
 
 ## Disclaimer
 This software and/or  hardware is developed incrementally. That means I have 
@@ -61,9 +61,9 @@ The software target is:
 The project uses the following existing classes from the
 `ultimateTimer` repository:
 
-- `DisplayDriver`
+- `DisplayDriverClass`
 - `InputClass`
-- `WiFiManagerExt`
+- `WiFiManagerExtClass`
 
 The software architecture and coding style must remain compatible with
 the patterns used in that repository.
@@ -109,8 +109,18 @@ ESP32-WROVER with PSRAM
 -D PIN_INPUT1=34
 -D PIN_INPUT2=35
 ```
+## Add GPIO Warning Notes
 
----
+ADD:
+
+```text
+GPIO04 and GPIO05 are ESP32 strapping pins.
+
+Requirements:
+- use weak pull resistors only
+- verify cold boot behavior
+- keep DAC inputs high impedance
+```
 
 # I2S Audio Mapping
 
@@ -237,8 +247,6 @@ Create a stable realtime audio foundation.
 ### Filesystem
 
 - initialize LittleFS
-- preload samples into RAM/PSRAM
-- validate WAV headers
 - fixed sample pool
 
 ### Input
@@ -251,7 +259,7 @@ Use InputClass for:
 
 ### Display
 
-Use DisplayDriver for:
+Use DisplayDriverClass for:
 
 - splash screen
 - status screen
@@ -301,11 +309,11 @@ MAC
 Requirements:
 
 - read-only fields must not be editable
-- WiFiManagerExt must be used
+- WiFiManagerExtClass must be used
 - WiFi Manager portal must be launchable from menu
 - credentials erase must reboot after completion
 - menu navigation via encoder
-- menu rendering via DisplayDriver
+- menu rendering via DisplayDriverClass
 - no blocking redraw loops
 
 ### Multitasking
@@ -425,7 +433,7 @@ The code has evolved from the original phase planning above. Current behavior no
 Class documentation was updated accordingly in:
 
 - [DisplayDriverClass.md](DisplayDriverClass.md)
-- [WiFiManagerExt.md](WiFiManagerExt.md)
+- [WiFiManagerExtClass.md](WiFiManagerExtClass.md)
 
 ### Sequencer Timing
 
@@ -467,13 +475,15 @@ Core 1
 
 ```text
 LittleFS
-→ preload samples
-→ sample pool
 → voice mixer
 → I2S DMA
 → DAC
 ```
 
+```text
+Samples are compiled directly into firmware
+as const uint8_t PROGMEM arrays.
+```
 ---
 
 # Voice System
@@ -563,8 +573,8 @@ src/
 ├── sequencer.cpp
 ├── sampleManager.cpp
 ├── uiManager.cpp
-├── DisplayDriver.cpp
-├── WiFiManagerExt.cpp
+├── DisplayDriverClass.cpp
+├── WiFiManagerExtClass.cpp
 ├── InputClass.cpp
 └── systemManager.cpp
 
@@ -574,14 +584,43 @@ include/
 ├── sequencer.h
 ├── sampleManager.h
 ├── uiManager.h
-├── DisplayDriver.h
+├── DisplayDriverClass.h
 ├── WiFiSettings.h
-├── WiFiManagerExt.h
+├── WiFiManagerExtClass.h
 ├── InputClass.h
-└── systemManager.h
+├── systemManager.h
+├── sampleKick.h
+├── sampleSnare.h
+├── sampleCh.h
+├── sampleOh.h
+├── sampleTone.h
+└── sampleMetal.h
+```
 
-data/
-└── samples/
+Each file contains:
+
+- WAV header
+- WAV sample data
+- total array length
+
+
+Important:
+
+- preserve the WAV header
+- existing WAV parser can still be used
+- no filesystem code required
+
+# SECTION: WAV Conversion
+## Add WAV to Header Conversion Workflow
+
+ADD:
+
+```bash
+xxd -i kick.wav > sampleKick.h
+```
+or use:
+```bash
+tools/convertSamplesWavToIncludes.py 
 ```
 
 ---
