@@ -124,16 +124,20 @@ ESP32-WROVER with PSRAM
   -D PIN_ENC_A=36     ;- was 32 [VP]
   -D PIN_ENC_B=39     ;- was 33 [VN]
 
+  -D PIN_I2S_WS_LRC=25
   -D PIN_I2S_BCLK=26
-  -D PIN_I2S_WS=25
   -D PIN_I2S_DOUT=27
   -D PIN_I2S_DIN=34
 
-  -D PIN_SD_MOSI=23   ;- share with TFT
-  -D PIN_SD_MISO=19
-  -D PIN_SD_SCLK=18   ;- share with TFT
   -D PIN_SD_CS=13
+  -D PIN_SD_SCLK=18   ;- share with TFT
+  -D PIN_SD_MISO=19
+  -D PIN_SD_MOSI=23   ;- share with TFT
+
+  -D PIN_I2C_SDA=21
+  -D PIN_I2C_CLK=22
 ```
+
 ## Add GPIO Warning Notes
 
 ADD:

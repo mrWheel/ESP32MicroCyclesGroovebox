@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 12:19 ***/
+/*** Last Changed: 2026-05-24 - 14:34 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -15,7 +15,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.1.1";
+const char* PROG_VERSION = "v0.1.3";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -37,6 +37,21 @@ static bool audioTaskStarted = false;
 static bool uiTaskStarted = false;
 static bool inputTaskStarted = false;
 static bool systemTaskStarted = false;
+
+//-- Warn when critical pin assignments overlap.
+static void logPinConflictWarnings()
+{
+  if (PIN_I2S_WS == PIN_TFT_RST || PIN_I2S_WS == PIN_TFT_CS || PIN_I2S_WS == PIN_TFT_DC || PIN_I2S_WS == PIN_TFT_SCL || PIN_I2S_WS == PIN_TFT_SDA || PIN_I2S_WS == PIN_TFT_BL)
+  {
+    ESP_LOGE(logTag, "Pin conflict: PIN_I2S_WS=%d overlaps TFT pin assignment", PIN_I2S_WS);
+  }
+
+  if (PIN_I2S_DOUT == PIN_TFT_RST || PIN_I2S_DOUT == PIN_TFT_CS || PIN_I2S_DOUT == PIN_TFT_DC || PIN_I2S_DOUT == PIN_TFT_SCL || PIN_I2S_DOUT == PIN_TFT_SDA || PIN_I2S_DOUT == PIN_TFT_BL)
+  {
+    ESP_LOGE(logTag, "Pin conflict: PIN_I2S_DOUT=%d overlaps TFT pin assignment", PIN_I2S_DOUT);
+  }
+
+} //   logPinConflictWarnings()
 
 //-- Run one fallback cycle for input and UI when tasks are unavailable.
 static void runInputUiFallbackCycle()
@@ -83,14 +98,8 @@ static void audioTask(void* parameter)
 
     audioEngineRenderBlock();
 
-    if (audioEngineIsOutputReady())
-    {
-      taskYIELD();
-    }
-    else
-    {
-      vTaskDelay(pdMS_TO_TICKS(1));
-    }
+    //-- Always yield one tick so IDLE0 can run and task watchdog stays serviced.
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 
 } //   audioTask()
@@ -182,6 +191,7 @@ void setup()
   ESP_LOGI(logTag, "Booting ESP32 MicroCycles Groovebox (%s)", PROG_VERSION);
   ESP_LOGI(logTag, "TFT pins: CS=%d DC=%d RST=%d BL=%d SCL=%d SDA=%d", PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST, PIN_TFT_BL, PIN_TFT_SCL, PIN_TFT_SDA);
   ESP_LOGI(logTag, "I2S pins: BCLK=%d WS=%d DOUT=%d", PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT);
+  logPinConflictWarnings();
 
 #ifdef NO_DAC_HARDWARE
   ESP_LOGW(logTag, "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");

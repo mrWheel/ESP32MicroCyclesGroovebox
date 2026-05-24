@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-23 - 16:00 ***/
+/*** Last Changed: 2026-05-24 - 14:34 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -16,6 +16,10 @@ static const int audioChannelCount = 2;
 static const int audioBlockFrames = 128;
 static const int audioVoiceCount = 16;
 static const i2s_port_t audioI2sPort = I2S_NUM_0;
+
+#ifndef AUDIO_MASTER_GAIN_PERCENT
+#define AUDIO_MASTER_GAIN_PERCENT 45
+#endif
 
 //-- One fixed mixer voice.
 struct Voice
@@ -42,9 +46,51 @@ static bool audioOutputReady = false;
 //-- Test tone phase.
 static float sinePhase = 0.0f;
 
+#ifdef TEST_TONE
+#ifndef TEST_TONE_FREQUENCY_HZ
+#define TEST_TONE_FREQUENCY_HZ 1000
+#endif
+
+static const float testToneFrequencyHz = static_cast<float>(TEST_TONE_FREQUENCY_HZ);
+static const float testToneAmplitude = 9000.0f;
+#endif
+
+//-- Apply final software gain and clamp to int16 range.
+static int16_t applyMasterGainAndClamp(int32_t sampleValue)
+{
+  int32_t scaled = (sampleValue * AUDIO_MASTER_GAIN_PERCENT) / 100;
+
+  if (scaled > 32767)
+  {
+    scaled = 32767;
+  }
+  else if (scaled < -32768)
+  {
+    scaled = -32768;
+  }
+
+  return static_cast<int16_t>(scaled);
+
+} //   applyMasterGainAndClamp()
+
 //-- Mix one mono frame from active voices.
 static int16_t mixNextFrame(bool& hadVoices)
 {
+#ifdef TEST_TONE
+  hadVoices = false;
+
+  float sineValue = sinf(sinePhase);
+  int32_t mixed = static_cast<int32_t>(sineValue * testToneAmplitude);
+
+  sinePhase += 2.0f * static_cast<float>(M_PI) * testToneFrequencyHz / static_cast<float>(audioSampleRate);
+
+  if (sinePhase > 2.0f * static_cast<float>(M_PI))
+  {
+    sinePhase -= 2.0f * static_cast<float>(M_PI);
+  }
+
+  return applyMasterGainAndClamp(mixed);
+#else
   int32_t mixed = 0;
   hadVoices = false;
 
@@ -82,16 +128,8 @@ static int16_t mixNextFrame(bool& hadVoices)
     }
   }
 
-  if (mixed > 32767)
-  {
-    mixed = 32767;
-  }
-  else if (mixed < -32768)
-  {
-    mixed = -32768;
-  }
-
-  return static_cast<int16_t>(mixed);
+  return applyMasterGainAndClamp(mixed);
+#endif
 
 } //   mixNextFrame()
 
@@ -110,9 +148,16 @@ bool audioEngineInit()
 
   stats.dmaWriteFailures = 0;
   stats.activeVoiceCount = 0;
+#ifdef TEST_TONE
   stats.testToneEnabled = true;
+#else
+  stats.testToneEnabled = false;
+#endif
   audioOutputReady = false;
 
+#ifdef TEST_TONE
+  ESP_LOGI(logTag, "TEST_TONE enabled: %.1f Hz sine", static_cast<double>(testToneFrequencyHz));
+#endif
   ESP_LOGW(logTag, "NO_DAC_HARDWARE is enabled. I2S/DAC initialization is skipped.");
 
   return true;
@@ -137,6 +182,12 @@ bool audioEngineInit()
   pinConfig.data_out_num = PIN_I2S_DOUT;
   pinConfig.data_in_num = I2S_PIN_NO_CHANGE;
   pinConfig.mck_io_num = I2S_PIN_NO_CHANGE;
+
+#ifdef PIN_I2S_SD
+  // Many I2S DAC/amp modules use SD as shutdown/enable. Keep it enabled.
+  pinMode(PIN_I2S_SD, OUTPUT);
+  digitalWrite(PIN_I2S_SD, HIGH);
+#endif
 
   if (i2s_driver_install(audioI2sPort, &i2sConfig, 0, nullptr) != ESP_OK)
   {
@@ -172,9 +223,20 @@ bool audioEngineInit()
 
   stats.dmaWriteFailures = 0;
   stats.activeVoiceCount = 0;
+#ifdef TEST_TONE
   stats.testToneEnabled = true;
+#else
+  stats.testToneEnabled = false;
+#endif
   audioOutputReady = true;
 
+#ifdef TEST_TONE
+  ESP_LOGI(logTag, "TEST_TONE enabled: %.1f Hz sine", static_cast<double>(testToneFrequencyHz));
+#endif
+#ifdef PIN_I2S_SD
+  ESP_LOGI(logTag, "I2S SD/EN pin=%d set HIGH", PIN_I2S_SD);
+#endif
+  ESP_LOGI(logTag, "I2S pins BCLK=%d WS=%d DOUT=%d (master gain=%d%%)", pinConfig.bck_io_num, pinConfig.ws_io_num, pinConfig.data_out_num, AUDIO_MASTER_GAIN_PERCENT);
   ESP_LOGI(logTag, "Audio engine initialized");
 
   return true;
@@ -192,6 +254,11 @@ bool audioEngineIsOutputReady()
 //-- Trigger sample playback on a fixed voice slot.
 void audioEngineTriggerSample(SampleId sampleId, uint8_t level)
 {
+#ifdef TEST_TONE
+  (void)sampleId;
+  (void)level;
+  return;
+#else
   const SampleSlot& sample = sampleManagerGetSample(sampleId);
 
   if (!sample.valid || sample.data == nullptr || sample.frameCount == 0)
@@ -220,6 +287,8 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level)
   voices[selectedVoice].frameCount = sample.frameCount;
   voices[selectedVoice].position = 0;
   voices[selectedVoice].level = level;
+
+#endif
 
 } //   audioEngineTriggerSample()
 
@@ -261,7 +330,12 @@ void audioEngineRenderBlock()
 //-- Enable or disable sine test tone when no voices are active.
 void audioEngineSetTestToneEnabled(bool enabled)
 {
+#ifdef TEST_TONE
+  (void)enabled;
+  stats.testToneEnabled = true;
+#else
   stats.testToneEnabled = enabled;
+#endif
 
 } //   audioEngineSetTestToneEnabled()
 
