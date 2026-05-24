@@ -14,10 +14,10 @@ Status:
 
 Actions:
 
-1. Load Sequence
-2. Save Sequence
-3. New Sequence
-4. Delete Sequence
+1. Load Pattern
+2. Save Pattern
+3. New Pattern
+4. Delete Pattern
 5. Erase WiFi Credentials
 6. Start WiFi Manager
 7. Set Theme
@@ -26,16 +26,16 @@ Actions:
 10. Restart Groovebox
 11. Exit
 
-## Sequence Workflow
+## Pattern Workflow
 
-- Load Sequence: load a saved pattern from storage.
-- Save Sequence: save current pattern to active name.
-- New Sequence: clear current pattern and assign next name.
-- Delete Sequence: remove a saved sequence.
+- Load Pattern: load a saved pattern from storage.
+- Save Pattern: save current pattern to active name.
+- New Pattern: save a copy of the current pattern under the next free name.
+- Delete Pattern: remove a saved pattern.
 
-Generated sequence names follow this format:
+Generated pattern names follow this format:
 
-- S001, S002, S003, ...
+- P001, P002, P003, ...
 
 ## Wi-Fi Workflow
 

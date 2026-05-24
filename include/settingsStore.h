@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 12:19 ***/
+/*** Last Changed: 2026-05-24 - 17:10 ***/
 #ifndef SETTINGS_STORE_H
 #define SETTINGS_STORE_H
 
@@ -7,7 +7,7 @@
 
 #include "sequencer.h"
 
-static const size_t sequenceStoreMaxEntries = 24;
+static const size_t patternStoreMaxEntries = 24;
 
 struct RuntimeSettings
 {
@@ -25,19 +25,19 @@ void settingsStoreLoadRuntimeSettings(RuntimeSettings& settings);
 //-- Save runtime settings.
 bool settingsStoreSaveRuntimeSettings(const RuntimeSettings& settings);
 
-//-- List available sequence names without extension.
-bool settingsStoreListSequences(String sequenceNames[], size_t maxCount, size_t& outCount);
+//-- List available pattern names without extension.
+bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& outCount);
 
-//-- Find next available default sequence name.
-bool settingsStoreFindNextSequenceName(String& outName);
+//-- Find next available default pattern name.
+bool settingsStoreFindNextPatternName(String& outName);
 
-//-- Save sequence payload to LittleFS.
-bool settingsStoreSaveSequence(const String& sequenceName, const SequenceData& sequenceData);
+//-- Save pattern payload to LittleFS.
+bool settingsStoreSavePattern(const String& patternName, const PatternData& patternData);
 
-//-- Load sequence payload from LittleFS.
-bool settingsStoreLoadSequence(const String& sequenceName, SequenceData& sequenceData);
+//-- Load pattern payload from LittleFS.
+bool settingsStoreLoadPattern(const String& patternName, PatternData& patternData);
 
-//-- Delete one sequence file.
-bool settingsStoreDeleteSequence(const String& sequenceName);
+//-- Delete one pattern file.
+bool settingsStoreDeletePattern(const String& patternName);
 
 #endif

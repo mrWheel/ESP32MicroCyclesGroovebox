@@ -25,8 +25,8 @@
 3. Confirm in the dialog.
 4. Join the shown access point and submit credentials.
 
-## Sequence Not Found
+## Pattern Not Found
 
-- Use Load Sequence to refresh the list.
-- Create a New Sequence and Save Sequence once.
+- Use Load Pattern to refresh the list.
+- Create a New Pattern and Save Pattern once.
 - Check that flash partition and filesystem are not corrupted.

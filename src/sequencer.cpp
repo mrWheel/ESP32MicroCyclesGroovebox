@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 11:12 ***/
+/*** Last Changed: 2026-05-24 - 17:10 ***/
 #include "sequencer.h"
 
 #include <Arduino.h>
@@ -315,8 +315,8 @@ void sequencerLoadPattern(uint8_t slotIndex)
 
 } //   sequencerLoadPattern()
 
-//-- Export active sequence data for storage.
-void sequencerExportSequence(SequenceData& outData)
+//-- Export active pattern data for storage.
+void sequencerExportPattern(PatternData& outData)
 {
   portENTER_CRITICAL(&sequencerMux);
 
@@ -326,25 +326,25 @@ void sequencerExportSequence(SequenceData& outData)
 
   portEXIT_CRITICAL(&sequencerMux);
 
-} //   sequencerExportSequence()
+} //   sequencerExportPattern()
 
-//-- Import sequence data into active pattern slot.
-void sequencerImportSequence(const SequenceData& sequenceData)
+//-- Import pattern data into active pattern slot.
+void sequencerImportPattern(const PatternData& patternData)
 {
   portENTER_CRITICAL(&sequencerMux);
 
-  state.patterns[state.activePatternIndex] = sequenceData.pattern;
-  state.bpm = sequenceData.bpm;
-  state.swingPercent = sequenceData.swingPercent;
+  state.patterns[state.activePatternIndex] = patternData.pattern;
+  state.bpm = patternData.bpm;
+  state.swingPercent = patternData.swingPercent;
   state.currentStep = 0;
   state.cursorStep = 0;
   state.nextStepDueUs = 0;
 
   portEXIT_CRITICAL(&sequencerMux);
 
-} //   sequencerImportSequence()
+} //   sequencerImportPattern()
 
-//-- Reset active pattern to an empty sequence.
+//-- Reset active pattern to an empty pattern.
 void sequencerClearActivePattern()
 {
   portENTER_CRITICAL(&sequencerMux);

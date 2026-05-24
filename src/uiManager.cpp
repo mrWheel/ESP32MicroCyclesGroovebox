@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 15:06 ***/
+/*** Last Changed: 2026-05-24 - 17:10 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -22,7 +22,7 @@ static const uint32_t uiRefreshIntervalMs = 50;
 //-- Settings menu entries.
 static const int settingsEntryCount = 14;
 static const int settingsFirstActionIndex = 3;
-static const int sequenceListMaxEntries = static_cast<int>(sequenceStoreMaxEntries);
+static const int patternListMaxEntries = static_cast<int>(patternStoreMaxEntries);
 static const int menuVisibleLineCount = 9;
 
 //-- Track labels for sequencer page.
@@ -42,8 +42,8 @@ struct UiState
   bool bpmEditMode;
   bool wifiManagerConfirmOpen;
   bool eraseWifiConfirmOpen;
-  bool sequenceListOpen;
-  bool sequenceDeleteMode;
+  bool patternListOpen;
+  bool patternDeleteMode;
   bool wifiManagerWaitingForCredentials;
   bool wifiManagerPortalSeenActive;
   bool eraseWifiRestartPending;
@@ -51,14 +51,14 @@ struct UiState
   int eraseWifiConfirmSelection;
   int menuSelection;
   int menuFirstVisibleIndex;
-  int sequenceListSelection;
-  int sequenceListFirstVisibleIndex;
-  int sequenceCount;
+  int patternListSelection;
+  int patternListFirstVisibleIndex;
+  int patternCount;
   uint32_t eraseWifiRestartAtMs;
   uint32_t lastDrawMs;
   bool dirty;
-  String activeSequenceName;
-  String sequenceNames[sequenceListMaxEntries];
+  String activePatternName;
+  String patternNames[patternListMaxEntries];
 };
 
 //-- Runtime state.
@@ -234,135 +234,134 @@ static void updateListFirstVisibleIndex(int selectedIndex, int itemCount, int& f
 
 } //   updateListFirstVisibleIndex()
 
-//-- Refresh cached sequence names from LittleFS.
-static void refreshSequenceList()
+//-- Refresh cached pattern names from LittleFS.
+static void refreshPatternList()
 {
   size_t foundCount = 0;
 
-  uiState.sequenceCount = 0;
+  uiState.patternCount = 0;
 
-  if (!settingsStoreListSequences(uiState.sequenceNames, sequenceListMaxEntries, foundCount))
+  if (!settingsStoreListPatterns(uiState.patternNames, patternListMaxEntries, foundCount))
   {
     return;
   }
 
-  if (foundCount > static_cast<size_t>(sequenceListMaxEntries))
+  if (foundCount > static_cast<size_t>(patternListMaxEntries))
   {
-    foundCount = static_cast<size_t>(sequenceListMaxEntries);
+    foundCount = static_cast<size_t>(patternListMaxEntries);
   }
 
-  uiState.sequenceCount = static_cast<int>(foundCount);
+  uiState.patternCount = static_cast<int>(foundCount);
 
-  if (uiState.sequenceListSelection >= uiState.sequenceCount)
+  if (uiState.patternListSelection >= uiState.patternCount)
   {
-    uiState.sequenceListSelection = (uiState.sequenceCount > 0) ? (uiState.sequenceCount - 1) : 0;
+    uiState.patternListSelection = (uiState.patternCount > 0) ? (uiState.patternCount - 1) : 0;
   }
 
-} //   refreshSequenceList()
+} //   refreshPatternList()
 
-//-- Save current sequencer state under active sequence name.
-static bool saveActiveSequence()
+//-- Save current sequencer state under active pattern name.
+static bool saveActivePattern()
 {
-  SequenceData sequenceData;
-  String targetName = uiState.activeSequenceName;
+  PatternData patternData;
+  String targetName = uiState.activePatternName;
 
   if (targetName.isEmpty())
   {
-    if (!settingsStoreFindNextSequenceName(targetName))
+    if (!settingsStoreFindNextPatternName(targetName))
     {
       return false;
     }
   }
 
-  sequencerExportSequence(sequenceData);
+  sequencerExportPattern(patternData);
 
-  if (!settingsStoreSaveSequence(targetName, sequenceData))
+  if (!settingsStoreSavePattern(targetName, patternData))
   {
     return false;
   }
 
-  uiState.activeSequenceName = targetName;
-  refreshSequenceList();
+  uiState.activePatternName = targetName;
+  refreshPatternList();
 
   return true;
 
-} //   saveActiveSequence()
+} //   saveActivePattern()
 
-//-- Create a new empty sequence with automatic name.
-static bool createNewSequence()
+//-- Create a new pattern copy with automatic name.
+static bool createNewPattern()
 {
   String targetName;
-  SequenceData sequenceData;
+  PatternData patternData;
 
-  if (!settingsStoreFindNextSequenceName(targetName))
+  if (!settingsStoreFindNextPatternName(targetName))
   {
     return false;
   }
 
-  sequencerClearActivePattern();
-  sequencerExportSequence(sequenceData);
+  sequencerExportPattern(patternData);
 
-  if (!settingsStoreSaveSequence(targetName, sequenceData))
+  if (!settingsStoreSavePattern(targetName, patternData))
   {
     return false;
   }
 
-  uiState.activeSequenceName = targetName;
-  refreshSequenceList();
+  uiState.activePatternName = targetName;
+  refreshPatternList();
 
   return true;
 
-} //   createNewSequence()
+} //   createNewPattern()
 
-//-- Load one sequence from current list selection.
-static bool loadSelectedSequence()
+//-- Load one pattern from current list selection.
+static bool loadSelectedPattern()
 {
-  SequenceData sequenceData;
+  PatternData patternData;
 
-  if (uiState.sequenceCount <= 0 || uiState.sequenceListSelection < 0 || uiState.sequenceListSelection >= uiState.sequenceCount)
+  if (uiState.patternCount <= 0 || uiState.patternListSelection < 0 || uiState.patternListSelection >= uiState.patternCount)
   {
     return false;
   }
 
-  String selectedName = uiState.sequenceNames[uiState.sequenceListSelection];
+  String selectedName = uiState.patternNames[uiState.patternListSelection];
 
-  if (!settingsStoreLoadSequence(selectedName, sequenceData))
+  if (!settingsStoreLoadPattern(selectedName, patternData))
   {
     return false;
   }
 
-  sequencerImportSequence(sequenceData);
-  uiState.activeSequenceName = selectedName;
+  sequencerImportPattern(patternData);
+  uiState.activePatternName = selectedName;
 
   return true;
 
-} //   loadSelectedSequence()
+} //   loadSelectedPattern()
 
-//-- Delete one sequence from current list selection.
-static bool deleteSelectedSequence()
+//-- Delete one pattern from current list selection.
+static bool deleteSelectedPattern()
 {
-  if (uiState.sequenceCount <= 0 || uiState.sequenceListSelection < 0 || uiState.sequenceListSelection >= uiState.sequenceCount)
+  if (uiState.patternCount <= 0 || uiState.patternListSelection < 0 || uiState.patternListSelection >= uiState.patternCount)
   {
     return false;
   }
 
-  String selectedName = uiState.sequenceNames[uiState.sequenceListSelection];
+  String selectedName = uiState.patternNames[uiState.patternListSelection];
 
-  if (!settingsStoreDeleteSequence(selectedName))
+  if (!settingsStoreDeletePattern(selectedName))
   {
     return false;
   }
 
-  if (uiState.activeSequenceName == selectedName)
+  if (uiState.activePatternName == selectedName)
   {
-    uiState.activeSequenceName = "";
+    uiState.activePatternName = "";
   }
 
-  refreshSequenceList();
+  refreshPatternList();
 
   return true;
 
-} //   deleteSelectedSequence()
+} //   deleteSelectedPattern()
 
 //-- Build sequencer footer line text.
 static String buildSequencerFooterLine(const SequencerView& view, const AudioEngineStats& audioStats)
@@ -424,25 +423,25 @@ static void drawSystemSettingsScreen()
     return;
   }
 
-  if (uiState.sequenceListOpen)
+  if (uiState.patternListOpen)
   {
-    String items[sequenceListMaxEntries];
-    int itemCount = uiState.sequenceCount;
-    const char* title = uiState.sequenceDeleteMode ? "Delete Sequence" : "Load Sequence";
+    String items[patternListMaxEntries];
+    int itemCount = uiState.patternCount;
+    const char* title = uiState.patternDeleteMode ? "Delete Pattern" : "Load Pattern";
 
     if (itemCount <= 0)
     {
-      items[0] = "(No sequences found)";
+      items[0] = "(No patterns found)";
       itemCount = 1;
-      uiState.sequenceListSelection = 0;
+      uiState.patternListSelection = 0;
     }
     else
     {
       for (int itemIndex = 0; itemIndex < itemCount; itemIndex++)
       {
-        String lineText = uiState.sequenceNames[itemIndex];
+        String lineText = uiState.patternNames[itemIndex];
 
-        if (!uiState.activeSequenceName.isEmpty() && lineText == uiState.activeSequenceName)
+        if (!uiState.activePatternName.isEmpty() && lineText == uiState.activePatternName)
         {
           lineText += " *";
         }
@@ -450,10 +449,10 @@ static void drawSystemSettingsScreen()
         items[itemIndex] = fitListRowText(lineText);
       }
 
-      updateListFirstVisibleIndex(uiState.sequenceListSelection, itemCount, uiState.sequenceListFirstVisibleIndex);
+      updateListFirstVisibleIndex(uiState.patternListSelection, itemCount, uiState.patternListFirstVisibleIndex);
     }
 
-    display.drawListScreen(title, items, static_cast<size_t>(itemCount), uiState.sequenceListSelection, uiState.sequenceListFirstVisibleIndex);
+    display.drawListScreen(title, items, static_cast<size_t>(itemCount), uiState.patternListSelection, uiState.patternListFirstVisibleIndex);
     return;
   }
 
@@ -462,7 +461,7 @@ static void drawSystemSettingsScreen()
   String ssidValue = systemManagerGetSsid();
   String ipValue = systemManagerGetIpAddress();
   String macValue = systemManagerGetMacAddress();
-  String sequenceLabel = uiState.activeSequenceName.isEmpty() ? String("-") : uiState.activeSequenceName;
+  String patternLabel = uiState.activePatternName.isEmpty() ? String("-") : uiState.activePatternName;
   int activeThemeIndex = displayGetThemeColorIndex();
   const char* themeName = colorProfiles[activeThemeIndex].colorName;
   int displayRotation = displayGetRotation();
@@ -473,8 +472,8 @@ static void drawSystemSettingsScreen()
   char rotationEntry[40];
   char encoderOrderEntry[32];
 
-  snprintf(loadEntry, sizeof(loadEntry), "Load Sequence");
-  snprintf(saveEntry, sizeof(saveEntry), "Save Sequence (%s)", sequenceLabel.c_str());
+  snprintf(loadEntry, sizeof(loadEntry), "Load Pattern");
+  snprintf(saveEntry, sizeof(saveEntry), "Save Pattern (%s)", patternLabel.c_str());
   snprintf(themeEntry, sizeof(themeEntry), "Set Theme (%s)", themeName);
   snprintf(rotationEntry, sizeof(rotationEntry), "Rotate Display (%d)", displayRotation);
   snprintf(encoderOrderEntry, sizeof(encoderOrderEntry), "Encoder Order (%s)", encoderReversed ? "B-A" : "A-B");
@@ -484,8 +483,8 @@ static void drawSystemSettingsScreen()
   items[2] = fitListRowText("MAC: " + macValue);
   items[3] = fitListRowText(loadEntry);
   items[4] = fitListRowText(saveEntry);
-  items[5] = "New Sequence";
-  items[6] = "Delete Sequence";
+  items[5] = "New Pattern";
+  items[6] = "Delete Pattern";
   items[7] = "Erase WiFi Credentials";
   items[8] = "Start WiFi Manager";
   items[9] = fitListRowText(themeEntry);
@@ -563,27 +562,27 @@ static void executeMenuAction()
 
   if (uiState.menuSelection == 3)
   {
-    refreshSequenceList();
-    uiState.sequenceListOpen = true;
-    uiState.sequenceDeleteMode = false;
-    uiState.sequenceListSelection = 0;
-    uiState.sequenceListFirstVisibleIndex = 0;
+    refreshPatternList();
+    uiState.patternListOpen = true;
+    uiState.patternDeleteMode = false;
+    uiState.patternListSelection = 0;
+    uiState.patternListFirstVisibleIndex = 0;
   }
   else if (uiState.menuSelection == 4)
   {
-    saveActiveSequence();
+    saveActivePattern();
   }
   else if (uiState.menuSelection == 5)
   {
-    createNewSequence();
+    createNewPattern();
   }
   else if (uiState.menuSelection == 6)
   {
-    refreshSequenceList();
-    uiState.sequenceListOpen = true;
-    uiState.sequenceDeleteMode = true;
-    uiState.sequenceListSelection = 0;
-    uiState.sequenceListFirstVisibleIndex = 0;
+    refreshPatternList();
+    uiState.patternListOpen = true;
+    uiState.patternDeleteMode = true;
+    uiState.patternListSelection = 0;
+    uiState.patternListFirstVisibleIndex = 0;
   }
   else if (uiState.menuSelection == 7)
   {
@@ -631,22 +630,22 @@ void uiManagerInit()
   uiState.bpmEditMode = false;
   uiState.wifiManagerConfirmOpen = false;
   uiState.eraseWifiConfirmOpen = false;
-  uiState.sequenceListOpen = false;
-  uiState.sequenceDeleteMode = false;
+  uiState.patternListOpen = false;
+  uiState.patternDeleteMode = false;
   uiState.wifiManagerWaitingForCredentials = false;
   uiState.wifiManagerPortalSeenActive = false;
   uiState.eraseWifiRestartPending = false;
   uiState.wifiManagerConfirmSelection = 0;
   uiState.eraseWifiConfirmSelection = 0;
-  uiState.sequenceListSelection = 0;
+  uiState.patternListSelection = 0;
   uiState.menuFirstVisibleIndex = 0;
-  uiState.sequenceListFirstVisibleIndex = 0;
-  uiState.sequenceCount = 0;
+  uiState.patternListFirstVisibleIndex = 0;
+  uiState.patternCount = 0;
   uiState.eraseWifiRestartAtMs = 0;
   uiState.menuSelection = settingsEntryCount - 1;
   uiState.lastDrawMs = 0;
   uiState.dirty = true;
-  uiState.activeSequenceName = "";
+  uiState.activePatternName = "";
   lastSequencerStep = 0xFF;
   lastSequencerCursor = 0xFF;
   lastSequencerPlaying = false;
@@ -654,11 +653,11 @@ void uiManagerInit()
   sequencerScreenDrawn = false;
   lastSequencerFooterLine = "";
 
-  refreshSequenceList();
+  refreshPatternList();
 
-  if (uiState.sequenceCount > 0)
+  if (uiState.patternCount > 0)
   {
-    uiState.activeSequenceName = uiState.sequenceNames[0];
+    uiState.activePatternName = uiState.patternNames[0];
   }
 
   display.drawMessage("ESP32 Groovebox", "Phase 1 + 2 Boot");
@@ -784,8 +783,8 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     uiState.bpmEditMode = false;
     uiState.wifiManagerConfirmOpen = false;
     uiState.eraseWifiConfirmOpen = false;
-    uiState.sequenceListOpen = false;
-    uiState.sequenceDeleteMode = false;
+    uiState.patternListOpen = false;
+    uiState.patternDeleteMode = false;
 
     if (uiState.menuOpen)
     {
@@ -810,18 +809,18 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   {
     if (encoderEvent == ENCODER_EVENT_LEFT)
     {
-      if (uiState.sequenceListOpen)
+      if (uiState.patternListOpen)
       {
-        if (uiState.sequenceCount > 0)
+        if (uiState.patternCount > 0)
         {
-          uiState.sequenceListSelection--;
+          uiState.patternListSelection--;
 
-          if (uiState.sequenceListSelection < 0)
+          if (uiState.patternListSelection < 0)
           {
-            uiState.sequenceListSelection = uiState.sequenceCount - 1;
+            uiState.patternListSelection = uiState.patternCount - 1;
           }
 
-          updateListFirstVisibleIndex(uiState.sequenceListSelection, uiState.sequenceCount, uiState.sequenceListFirstVisibleIndex);
+          updateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount, uiState.patternListFirstVisibleIndex);
         }
       }
       else if (uiState.wifiManagerConfirmOpen)
@@ -841,18 +840,18 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
     else if (encoderEvent == ENCODER_EVENT_RIGHT)
     {
-      if (uiState.sequenceListOpen)
+      if (uiState.patternListOpen)
       {
-        if (uiState.sequenceCount > 0)
+        if (uiState.patternCount > 0)
         {
-          uiState.sequenceListSelection++;
+          uiState.patternListSelection++;
 
-          if (uiState.sequenceListSelection >= uiState.sequenceCount)
+          if (uiState.patternListSelection >= uiState.patternCount)
           {
-            uiState.sequenceListSelection = 0;
+            uiState.patternListSelection = 0;
           }
 
-          updateListFirstVisibleIndex(uiState.sequenceListSelection, uiState.sequenceCount, uiState.sequenceListFirstVisibleIndex);
+          updateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount, uiState.patternListFirstVisibleIndex);
         }
       }
       else if (uiState.wifiManagerConfirmOpen)
@@ -872,27 +871,27 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
     else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
     {
-      if (uiState.sequenceListOpen)
+      if (uiState.patternListOpen)
       {
-        if (uiState.sequenceCount > 0)
+        if (uiState.patternCount > 0)
         {
-          if (!uiState.sequenceDeleteMode)
+          if (!uiState.patternDeleteMode)
           {
-            if (loadSelectedSequence())
+            if (loadSelectedPattern())
             {
               uiState.menuOpen = false;
-              uiState.sequenceListOpen = false;
-              uiState.sequenceListFirstVisibleIndex = 0;
+              uiState.patternListOpen = false;
+              uiState.patternListFirstVisibleIndex = 0;
             }
           }
           else if (encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
           {
-            deleteSelectedSequence();
+            deleteSelectedPattern();
 
-            if (uiState.sequenceCount == 0)
+            if (uiState.patternCount == 0)
             {
-              uiState.sequenceListOpen = false;
-              uiState.sequenceListFirstVisibleIndex = 0;
+              uiState.patternListOpen = false;
+              uiState.patternListFirstVisibleIndex = 0;
             }
           }
         }
@@ -1005,11 +1004,11 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
   {
     if (buttonEvent == BUTTON_EVENT_SHORT_PRESS)
     {
-      if (uiState.sequenceListOpen)
+      if (uiState.patternListOpen)
       {
-        uiState.sequenceListOpen = false;
-        uiState.sequenceDeleteMode = false;
-        uiState.sequenceListFirstVisibleIndex = 0;
+        uiState.patternListOpen = false;
+        uiState.patternDeleteMode = false;
+        uiState.patternListFirstVisibleIndex = 0;
       }
       else if (uiState.wifiManagerConfirmOpen)
       {

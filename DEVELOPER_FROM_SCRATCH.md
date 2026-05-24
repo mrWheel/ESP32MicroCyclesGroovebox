@@ -144,7 +144,7 @@ Main runtime modules:
 - src/audioEngine.cpp: I2S output and mixer
 - src/sampleManager.cpp: SD sample loading and WAV decoding
 - src/sequencer.cpp: sequencing logic
-- src/settingsStore.cpp: settings and sequence persistence
+- src/settingsStore.cpp: settings and pattern persistence
 - src/systemManager.cpp: Wi-Fi/system command handling
 
 ## 11. Common Failure Modes And Fast Checks
@@ -179,7 +179,42 @@ Main runtime modules:
 6. Disable diagnostic flags
 7. Rebuild and run normal firmware
 
-## 13. Related Documentation
+## 13. Pattern JSON Schema (Current)
+
+Pattern files are stored in:
+
+- /sequences/Pnnn.json
+
+Top-level fields:
+
+- version
+- name
+- bpm
+- swing
+- masterLevel
+- tracks
+
+Each track contains:
+
+- name
+- machine
+- sample
+- mute
+- solo
+- level
+- pan
+- steps
+
+Each step contains:
+
+- trig
+- velocity
+- locks (object)
+
+The loader now expects this schema directly.
+Backward conversion from older pattern schemas is intentionally not used.
+
+## 14. Related Documentation
 
 - User manual home: docs/README.md
 - Browser manual index: docs/index.html

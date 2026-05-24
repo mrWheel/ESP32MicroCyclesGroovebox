@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 11:12 ***/
+/*** Last Changed: 2026-05-24 - 17:10 ***/
 #ifndef SEQUENCER_H
 #define SEQUENCER_H
 
@@ -42,8 +42,8 @@ struct SequencerView
   bool shiftMode;
 };
 
-//-- Persistable sequence payload.
-struct SequenceData
+//-- Persistable pattern payload.
+struct PatternData
 {
   Pattern pattern;
   uint16_t bpm;
@@ -70,9 +70,9 @@ void sequencerToggleMuteForSelectedTrack();
 void sequencerStorePattern(uint8_t slotIndex);
 void sequencerLoadPattern(uint8_t slotIndex);
 
-//-- Import/export helpers for sequence storage.
-void sequencerExportSequence(SequenceData& outData);
-void sequencerImportSequence(const SequenceData& sequenceData);
+//-- Import/export helpers for pattern storage.
+void sequencerExportPattern(PatternData& outData);
+void sequencerImportPattern(const PatternData& patternData);
 void sequencerClearActivePattern();
 
 //-- Copy current state into a view snapshot.

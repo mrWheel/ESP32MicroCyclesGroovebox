@@ -7,6 +7,6 @@ Current project status:
 - Documentation is R3-focused.
 - User manual is maintained in `docs/`.
 - Samples are embedded in firmware.
-- Sequence files are managed from System Settings.
+- Pattern files are managed from System Settings.
 
 For current user documentation, start at `docs/README.md` or `docs/index.html`.

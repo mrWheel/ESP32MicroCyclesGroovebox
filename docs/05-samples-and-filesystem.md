@@ -1,4 +1,4 @@
-# 5. Samples and Sequences
+# 5. Samples and Patterns
 
 ## Samples
 
@@ -20,12 +20,12 @@ Required paths on SD card:
 - `/samples/tone.wav`
 - `/samples/metal.wav`
 
-## Sequence Storage
+## Pattern Storage
 
-User sequences are saved in internal flash filesystem.
+User patterns are saved in internal flash filesystem.
 
-- Sequence folder: `/sequences`
-- Naming format: `Snnn` (example: `S014`)
+- Pattern folder: `/sequences`
+- Naming format: `Pnnn` (example: `P014`)
 
 ## If a Sample Sounds Wrong
 
