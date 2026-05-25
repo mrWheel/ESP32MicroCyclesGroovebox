@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #ifndef SETTINGS_STORE_H
 #define SETTINGS_STORE_H
 

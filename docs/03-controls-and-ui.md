@@ -20,15 +20,23 @@ Tracks:
 ## Encoder Actions
 
 - Rotate: select track
-- Rotate in SHIFT mode: move step cursor
+- Rotate in EDIT mode: move step cursor
 - Short press:
   - If not in edit mode: enter edit mode
   - If already in edit mode: toggle step on/off
-  - If BPM edit is active: exit BPM edit
 - Medium press:
-  - Normal mode: BPM edit on/off
-  - SHIFT mode: mute/unmute current track
+  - Normal mode: open Tempo Edit popup
+  - EDIT mode: mute/unmute current track
 - Long press: open or close System Settings
+
+## Tempo Edit Popup
+
+- Open with encoder medium press
+- Appears as an inline overlay on the Groovebox screen
+- Rotate: change the selected value
+- Short press: switch between BPM and SW
+- Medium press: close popup
+- KEY0 short/medium/long: close popup
 
 ## KEY0 Actions
 
@@ -36,16 +44,8 @@ Tracks:
   - If in edit mode: exit edit mode
   - If not in edit mode: Play/Stop
 - Medium press: toggle edit mode on/off
-- Long press: increase swing
+- Long press: open Tempo Edit popup with SW selected
 
-## BPM Edit
+## EDIT Visual Cue
 
-When BPM edit is active:
-
-- Rotate left: BPM down
-- Rotate right: BPM up
-- Short press: exit BPM edit
-
-## SHIFT Visual Cue
-
-In SHIFT mode, the selected step character is highlighted for precise step editing.
+In EDIT mode, the selected step character is highlighted for precise step editing.

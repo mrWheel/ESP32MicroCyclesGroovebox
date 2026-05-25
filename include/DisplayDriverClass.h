@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 12:19 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #ifndef DISPLAY_DRIVER_H
 #define DISPLAY_DRIVER_H
 
@@ -89,6 +89,7 @@ public:
   void drawListLine(int lineIndex, const String& text, bool selected);
   void drawListCharacterHighlight(int lineIndex, int charIndex, char character);
   void drawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const bool disabledItems[]);
+  void drawTempoOverlay(uint16_t bpm, uint8_t swingPercent, bool bpmSelected);
   void refreshHeaderIfNeeded(const char* rightText, uint32_t minimumIntervalMs);
   void drawNumberEditor(const char* label, uint32_t value, const char* unitLabel);
   void drawEnumEditor(const char* label, const char* valueLabel);

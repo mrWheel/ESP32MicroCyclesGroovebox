@@ -20,6 +20,8 @@ The end-user manual is in the docs folder.
 - Hardware focus: R3 only
 - 6 drum/sample tracks
 - 16-step sequencer
+- Per-step velocity and probability in the active sequencer model
+- Track mute and swing playback controls
 - Pattern load/save/new/delete from System Settings
 - Optional Wi-Fi setup from System Settings
 - SD card sample set from `/samples/*.wav`

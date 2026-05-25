@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #include "settingsStore.h"
 #include "appConfig.h"
 
@@ -337,7 +337,7 @@ bool settingsStoreSavePattern(const String& patternName, const PatternData& patt
   JsonDocument jsonDocument;
   JsonArray tracks = jsonDocument["tracks"].to<JsonArray>();
 
-  jsonDocument["version"] = 1;
+  jsonDocument["version"] = 2;
   jsonDocument["name"] = normalizedName;
   jsonDocument["bpm"] = patternData.bpm;
   jsonDocument["swing"] = patternData.swingPercent;
@@ -363,6 +363,7 @@ bool settingsStoreSavePattern(const String& patternName, const PatternData& patt
 
       stepObject["trig"] = step.trigger;
       stepObject["velocity"] = step.velocity;
+      stepObject["probability"] = step.probability;
       (void)stepObject["locks"].to<JsonObject>();
     }
   }
@@ -440,6 +441,7 @@ bool settingsStoreLoadPattern(const String& patternName, PatternData& patternDat
 
       step.trigger = static_cast<bool>(stepObject["trig"] | false);
       step.velocity = static_cast<uint8_t>(stepObject["velocity"] | 255);
+      step.probability = static_cast<uint8_t>(stepObject["probability"] | 100);
     }
   }
 

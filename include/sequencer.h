@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #ifndef SEQUENCER_H
 #define SEQUENCER_H
 
@@ -13,6 +13,7 @@ struct Step
 {
   bool trigger;
   uint8_t velocity;
+  uint8_t probability;
 };
 
 //-- One sequencer track.
@@ -39,7 +40,7 @@ struct SequencerView
   uint8_t cursorStep;
   uint8_t activePatternIndex;
   bool playing;
-  bool shiftMode;
+  bool editMode;
 };
 
 //-- Persistable pattern payload.
@@ -58,7 +59,7 @@ bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& out
 
 //-- Handle transport and edit controls.
 void sequencerTogglePlay();
-void sequencerToggleShiftMode();
+void sequencerToggleEditMode();
 void sequencerMoveCursor(int delta);
 void sequencerMoveTrack(int delta);
 void sequencerToggleCurrentStep();

@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -39,7 +39,8 @@ static const char* trackNames[sequencerTrackCount] =
 struct UiState
 {
   bool menuOpen;
-  bool bpmEditMode;
+  bool tempoEditOpen;
+  int tempoEditSelection;
   bool wifiManagerConfirmOpen;
   bool eraseWifiConfirmOpen;
   bool patternListOpen;
@@ -504,13 +505,18 @@ static void drawSequencerScreen()
   SequencerView view;
   String lines[8];
   int selectedLine = 1;
-  char headerLine[48];
+  char headerLine[40];
   AudioEngineStats audioStats;
 
   sequencerGetView(view);
   audioEngineGetStats(audioStats);
 
-  snprintf(headerLine, sizeof(headerLine), "BPM %u  SW %u  %s %s", static_cast<unsigned>(view.bpm), static_cast<unsigned>(view.swingPercent), view.playing ? "PLAY" : "STOP", uiState.bpmEditMode ? "[BPM]" : (view.shiftMode ? "[SHIFT]" : ""));
+  snprintf(headerLine,
+           sizeof(headerLine),
+           "BPM %03u  SW %02u  %s",
+           static_cast<unsigned>(view.bpm),
+           static_cast<unsigned>(view.swingPercent),
+           view.playing ? "PLAY" : "STOP");
   lines[0] = fitListRowText(headerLine);
 
   for (uint8_t trackIndex = 0; trackIndex < sequencerTrackCount; trackIndex++)
@@ -523,7 +529,12 @@ static void drawSequencerScreen()
   selectedLine = static_cast<int>(view.selectedTrack) + 1;
   display.drawListScreen("Groovebox", lines, 8, selectedLine, 0, PROG_VERSION);
 
-  if (view.shiftMode)
+  if (uiState.tempoEditOpen)
+  {
+    display.drawTempoOverlay(view.bpm, view.swingPercent, uiState.tempoEditSelection == 0);
+  }
+
+  if (view.editMode && !uiState.tempoEditOpen)
   {
     int stepCharIndex = 7 + static_cast<int>(view.cursorStep);
 
@@ -627,7 +638,8 @@ static void executeMenuAction()
 void uiManagerInit()
 {
   uiState.menuOpen = false;
-  uiState.bpmEditMode = false;
+  uiState.tempoEditOpen = false;
+  uiState.tempoEditSelection = 0;
   uiState.wifiManagerConfirmOpen = false;
   uiState.eraseWifiConfirmOpen = false;
   uiState.patternListOpen = false;
@@ -780,7 +792,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
 
     uiState.menuOpen = !uiState.menuOpen;
-    uiState.bpmEditMode = false;
+    uiState.tempoEditOpen = false;
     uiState.wifiManagerConfirmOpen = false;
     uiState.eraseWifiConfirmOpen = false;
     uiState.patternListOpen = false;
@@ -928,16 +940,50 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     return;
   }
 
+  if (uiState.tempoEditOpen)
+  {
+    if (encoderEvent == ENCODER_EVENT_LEFT)
+    {
+      if (uiState.tempoEditSelection == 0)
+      {
+        sequencerAdjustBpm(-1);
+      }
+      else
+      {
+        sequencerAdjustSwing(-1);
+      }
+    }
+    else if (encoderEvent == ENCODER_EVENT_RIGHT)
+    {
+      if (uiState.tempoEditSelection == 0)
+      {
+        sequencerAdjustBpm(1);
+      }
+      else
+      {
+        sequencerAdjustSwing(1);
+      }
+    }
+    else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS)
+    {
+      uiState.tempoEditSelection = (uiState.tempoEditSelection == 0) ? 1 : 0;
+    }
+    else if (encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+    {
+      uiState.tempoEditOpen = false;
+      uiState.tempoEditSelection = 0;
+    }
+
+    uiState.dirty = true;
+    return;
+  }
+
   SequencerView view;
   sequencerGetView(view);
 
   if (encoderEvent == ENCODER_EVENT_LEFT)
   {
-    if (uiState.bpmEditMode)
-    {
-      sequencerAdjustBpm(-1);
-    }
-    else if (view.shiftMode)
+    if (view.editMode)
     {
       sequencerMoveCursor(-1);
     }
@@ -948,11 +994,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   }
   else if (encoderEvent == ENCODER_EVENT_RIGHT)
   {
-    if (uiState.bpmEditMode)
-    {
-      sequencerAdjustBpm(1);
-    }
-    else if (view.shiftMode)
+    if (view.editMode)
     {
       sequencerMoveCursor(1);
     }
@@ -963,13 +1005,9 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   }
   else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS)
   {
-    if (uiState.bpmEditMode)
+    if (!view.editMode)
     {
-      uiState.bpmEditMode = false;
-    }
-    else if (!view.shiftMode)
-    {
-      sequencerToggleShiftMode();
+      sequencerToggleEditMode();
     }
     else
     {
@@ -978,13 +1016,14 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   }
   else if (encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
   {
-    if (view.shiftMode)
+    if (view.editMode)
     {
       sequencerToggleMuteForSelectedTrack();
     }
     else
     {
-      uiState.bpmEditMode = !uiState.bpmEditMode;
+      uiState.tempoEditOpen = true;
+      uiState.tempoEditSelection = 0;
     }
   }
 
@@ -1025,9 +1064,22 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
       else
       {
         uiState.menuOpen = false;
-        uiState.bpmEditMode = false;
+        uiState.tempoEditOpen = false;
+        uiState.tempoEditSelection = 0;
       }
 
+      uiState.dirty = true;
+    }
+
+    return;
+  }
+
+  if (uiState.tempoEditOpen)
+  {
+    if (buttonEvent == BUTTON_EVENT_SHORT_PRESS || buttonEvent == BUTTON_EVENT_MEDIUM_PRESS || buttonEvent == BUTTON_EVENT_LONG_PRESS)
+    {
+      uiState.tempoEditOpen = false;
+      uiState.tempoEditSelection = 0;
       uiState.dirty = true;
     }
 
@@ -1039,9 +1091,9 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
     SequencerView view;
     sequencerGetView(view);
 
-    if (view.shiftMode)
+    if (view.editMode)
     {
-      sequencerToggleShiftMode();
+      sequencerToggleEditMode();
     }
     else
     {
@@ -1050,11 +1102,13 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
   }
   else if (buttonEvent == BUTTON_EVENT_MEDIUM_PRESS)
   {
-    sequencerToggleShiftMode();
+    uiState.tempoEditOpen = true;
+    uiState.tempoEditSelection = 0;
   }
   else if (buttonEvent == BUTTON_EVENT_LONG_PRESS)
   {
-    sequencerAdjustSwing(2);
+    uiState.tempoEditOpen = true;
+    uiState.tempoEditSelection = 1;
   }
 
   uiState.dirty = true;

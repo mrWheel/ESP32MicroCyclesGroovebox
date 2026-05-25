@@ -1,7 +1,8 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #include "sequencer.h"
 
 #include <Arduino.h>
+#include <esp_system.h>
 
 //-- Shared lock between AudioTask and UI/System tasks.
 static portMUX_TYPE sequencerMux = portMUX_INITIALIZER_UNLOCKED;
@@ -17,7 +18,7 @@ struct SequencerState
   uint8_t selectedTrack;
   uint8_t activePatternIndex;
   bool playing;
-  bool shiftMode;
+  bool editMode;
   uint64_t nextStepDueUs;
 };
 
@@ -35,6 +36,7 @@ static void loadDefaultPattern(Pattern& pattern)
     {
       pattern.tracks[trackIndex].steps[stepIndex].trigger = false;
       pattern.tracks[trackIndex].steps[stepIndex].velocity = 255;
+      pattern.tracks[trackIndex].steps[stepIndex].probability = 100;
     }
   }
 
@@ -95,7 +97,7 @@ void sequencerInit()
   state.selectedTrack = 0;
   state.activePatternIndex = 0;
   state.playing = false;
-  state.shiftMode = false;
+  state.editMode = false;
   state.nextStepDueUs = 0;
 
   for (uint8_t patternIndex = 0; patternIndex < sequencerPatternCount; patternIndex++)
@@ -141,7 +143,12 @@ bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& out
 
         if (track.steps[state.currentStep].trigger)
         {
-          outTrackMask |= static_cast<uint8_t>(1U << trackIndex);
+          const Step& step = track.steps[state.currentStep];
+
+          if (step.probability >= 100U || (esp_random() % 100U) < step.probability)
+          {
+            outTrackMask |= static_cast<uint8_t>(1U << trackIndex);
+          }
         }
       }
 
@@ -173,14 +180,14 @@ void sequencerTogglePlay()
 
 } //   sequencerTogglePlay()
 
-//-- Toggle shift modifier state.
-void sequencerToggleShiftMode()
+//-- Toggle edit mode state.
+void sequencerToggleEditMode()
 {
   portENTER_CRITICAL(&sequencerMux);
-  state.shiftMode = !state.shiftMode;
+  state.editMode = !state.editMode;
   portEXIT_CRITICAL(&sequencerMux);
 
-} //   sequencerToggleShiftMode()
+} //   sequencerToggleEditMode()
 
 //-- Move step cursor.
 void sequencerMoveCursor(int delta)
@@ -359,6 +366,7 @@ void sequencerClearActivePattern()
     {
       activePattern.tracks[trackIndex].steps[stepIndex].trigger = false;
       activePattern.tracks[trackIndex].steps[stepIndex].velocity = 255;
+      activePattern.tracks[trackIndex].steps[stepIndex].probability = 100;
     }
   }
 
@@ -383,7 +391,7 @@ void sequencerGetView(SequencerView& outView)
   outView.cursorStep = state.cursorStep;
   outView.activePatternIndex = state.activePatternIndex;
   outView.playing = state.playing;
-  outView.shiftMode = state.shiftMode;
+  outView.editMode = state.editMode;
 
   portEXIT_CRITICAL(&sequencerMux);
 

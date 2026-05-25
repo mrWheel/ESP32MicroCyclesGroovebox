@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 12:19 ***/
+/*** Last Changed: 2026-05-25 - 10:44 ***/
 #include "DisplayDriverClass.h"
 #include "appConfig.h"
 #include "colorSettings.h"
@@ -1492,6 +1492,65 @@ void DisplayDriver::drawButton(int x, int y, int width, int height, const char* 
   tft.print(label);
 
 } //   DisplayDriver::drawButton()
+
+//--- Draw inline tempo overlay card on top of the sequencer screen
+void DisplayDriver::drawTempoOverlay(uint16_t bpm, uint8_t swingPercent, bool bpmSelected)
+{
+  const int shadowX = 28;
+  const int shadowY = 64;
+  const int shadowW = 264;
+  const int shadowH = 118;
+  const int panelX = 36;
+  const int panelY = 72;
+  const int panelW = 248;
+  const int panelH = 102;
+  const int rowX = panelX + 10;
+  const int rowW = panelW - 20;
+  const int rowH = 32;
+  const int bpmRowY = panelY + 16;
+  const int swingRowY = panelY + 54;
+  const uint16_t shadowColor = PANEL_COLOR(0x2104);
+  const uint16_t panelFillColor = getUiInactiveFillColor();
+  const uint16_t panelBorderColor = getUiInactiveBorderColor();
+  char bpmText[20];
+  char swingText[20];
+  int16_t x1;
+  int16_t y1;
+  uint16_t textW;
+  uint16_t textH;
+  int textX;
+
+  //-- Subtle dim zone behind the popup while keeping most of the screen visible.
+  tft.fillRoundRect(shadowX, shadowY, shadowW, shadowH, 10, shadowColor);
+
+  //-- Bright popup panel.
+  tft.fillRoundRect(panelX, panelY, panelW, panelH, 10, panelFillColor);
+  tft.drawRoundRect(panelX, panelY, panelW, panelH, 10, panelBorderColor);
+
+  tft.fillRoundRect(rowX, bpmRowY, rowW, rowH, 6, bpmSelected ? getUiSelectedFillColor() : panelFillColor);
+  tft.drawRoundRect(rowX, bpmRowY, rowW, rowH, 6, bpmSelected ? getUiSelectedBorderColor() : panelBorderColor);
+
+  tft.fillRoundRect(rowX, swingRowY, rowW, rowH, 6, bpmSelected ? panelFillColor : getUiSelectedFillColor());
+  tft.drawRoundRect(rowX, swingRowY, rowW, rowH, 6, bpmSelected ? panelBorderColor : getUiSelectedBorderColor());
+
+  snprintf(bpmText, sizeof(bpmText), "BPM %c%03u%c", bpmSelected ? '>' : ' ', static_cast<unsigned>(bpm), bpmSelected ? '<' : ' ');
+  snprintf(swingText, sizeof(swingText), "SW  %c%02u%%%c", bpmSelected ? ' ' : '>', static_cast<unsigned>(swingPercent), bpmSelected ? ' ' : '<');
+
+  tft.setTextSize(2);
+
+  tft.setTextColor(bpmSelected ? getUiSelectedTextColor() : getUiInactiveTextColor(), bpmSelected ? getUiSelectedFillColor() : panelFillColor);
+  tft.getTextBounds(bpmText, 0, 0, &x1, &y1, &textW, &textH);
+  textX = rowX + ((rowW - static_cast<int>(textW)) / 2);
+  tft.setCursor(textX, bpmRowY + 8);
+  tft.print(bpmText);
+
+  tft.setTextColor(bpmSelected ? getUiInactiveTextColor() : getUiSelectedTextColor(), bpmSelected ? panelFillColor : getUiSelectedFillColor());
+  tft.getTextBounds(swingText, 0, 0, &x1, &y1, &textW, &textH);
+  textX = rowX + ((rowW - static_cast<int>(textW)) / 2);
+  tft.setCursor(textX, swingRowY + 8);
+  tft.print(swingText);
+
+} //   DisplayDriver::drawTempoOverlay()
 
 //--- Add a generic tile to the registry
 int DisplayDriver::addTile(const char* name, int row, int column, int size, const std::string& text, DisplayTextAlign align)
