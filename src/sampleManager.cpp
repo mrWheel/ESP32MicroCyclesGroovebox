@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-25 - 18:06 ***/
+/*** Last Changed: 2026-05-27 - 11:31 ***/
 #include "sampleManager.h"
 #include "appConfig.h"
 
@@ -438,6 +438,7 @@ static bool initSdCard()
 } //   initSdCard()
 
 //-- Decode one WAV file from SD into sample slot storage.
+//-- Decode one WAV file from SD into sample slot storage.
 static bool loadSampleFromSd(uint8_t sampleIndex)
 {
   const SampleSource& source = sampleSources[sampleIndex];
@@ -474,7 +475,7 @@ static bool loadSampleFromSd(uint8_t sampleIndex)
                          ((fmtChunk.bitsPerSample == 16) || (fmtChunk.bitsPerSample == 24)) &&
                          (fmtChunk.numChannels >= 1) &&
                          (fmtChunk.numChannels <= 2) &&
-                         ((fmtChunk.sampleRate == 22050) || (fmtChunk.sampleRate == 44100));
+                         (fmtChunk.sampleRate == 44100);
 
   if (!supportedFormat)
   {
@@ -491,24 +492,25 @@ static bool loadSampleFromSd(uint8_t sampleIndex)
 
   uint32_t bytesPerInputSample = static_cast<uint32_t>(fmtChunk.bitsPerSample) / 8U;
   uint32_t inputFrameCount = dataSize / (static_cast<uint32_t>(fmtChunk.numChannels) * bytesPerInputSample);
+  uint32_t outputFrameCount = inputFrameCount;
 
-  if (inputFrameCount == 0)
+  ESP_LOGI(logTag,
+           "WAV info: %s fmt=%u channels=%u sampleRate=%lu bits=%u dataOffset=%lu dataSize=%lu inputFrames=%lu outputFrames=%lu",
+           source.name,
+           static_cast<unsigned>(fmtChunk.audioFormat),
+           static_cast<unsigned>(fmtChunk.numChannels),
+           static_cast<unsigned long>(fmtChunk.sampleRate),
+           static_cast<unsigned>(fmtChunk.bitsPerSample),
+           static_cast<unsigned long>(dataOffset),
+           static_cast<unsigned long>(dataSize),
+           static_cast<unsigned long>(inputFrameCount),
+           static_cast<unsigned long>(outputFrameCount));
+
+  if (outputFrameCount == 0)
   {
     ESP_LOGW(logTag, "SD WAV has no audio frames: %s", source.name);
     wavFile.close();
     return false;
-  }
-
-  uint32_t outputFrameCount = inputFrameCount;
-
-  if (fmtChunk.sampleRate == 44100)
-  {
-    outputFrameCount = inputFrameCount / 2;
-
-    if (outputFrameCount == 0)
-    {
-      outputFrameCount = 1;
-    }
   }
 
   size_t sampleByteCount = static_cast<size_t>(outputFrameCount) * sizeof(int16_t);
@@ -525,74 +527,45 @@ static bool loadSampleFromSd(uint8_t sampleIndex)
 
   if (sampleData == nullptr)
   {
-    ESP_LOGE(logTag, "Out of memory for SD sample: %s (need=%lu bytes)", source.name, static_cast<unsigned long>(sampleByteCount));
+    ESP_LOGE(logTag,
+             "Out of memory for SD sample: %s (need=%lu bytes)",
+             source.name,
+             static_cast<unsigned long>(sampleByteCount));
+
     logSampleAllocationHeapState(source.name, sampleByteCount);
     wavFile.close();
+
+    return false;
+  }
+
+  if (!wavFile.seek(dataOffset))
+  {
+    ESP_LOGW(logTag, "Failed to seek SD WAV payload: %s", source.name);
+    free(sampleData);
+    wavFile.close();
+
     return false;
   }
 
   bool decodeOk = true;
+  uint32_t consumedBytes = 0;
 
-  if (fmtChunk.sampleRate == 22050 && fmtChunk.numChannels == 1 && fmtChunk.bitsPerSample == 16)
+  for (uint32_t outputIndex = 0; outputIndex < outputFrameCount; outputIndex++)
   {
-    if (!wavFile.seek(dataOffset))
+    int16_t monoSample = 0;
+
+    if (!readMonoSampleFromFile(wavFile,
+                                dataSize,
+                                consumedBytes,
+                                fmtChunk.numChannels,
+                                fmtChunk.bitsPerSample,
+                                monoSample))
     {
-      ESP_LOGW(logTag, "Failed to seek SD WAV payload: %s", source.name);
-      free(sampleData);
-      wavFile.close();
-      return false;
+      decodeOk = false;
+      break;
     }
 
-    size_t bytesRead = static_cast<size_t>(wavFile.read(reinterpret_cast<uint8_t*>(sampleData), sampleByteCount));
-
-    if (bytesRead != sampleByteCount)
-    {
-      ESP_LOGW(logTag, "Short PCM read for SD WAV: %s", source.name);
-      free(sampleData);
-      wavFile.close();
-      return false;
-    }
-  }
-  else
-  {
-    uint32_t consumedBytes = 0;
-
-    if (!wavFile.seek(dataOffset))
-    {
-      ESP_LOGW(logTag, "Failed to seek SD WAV payload: %s", source.name);
-      free(sampleData);
-      wavFile.close();
-      return false;
-    }
-
-    for (uint32_t outputIndex = 0; outputIndex < outputFrameCount; outputIndex++)
-    {
-      int16_t firstSample = 0;
-
-      if (!readMonoSampleFromFile(wavFile, dataSize, consumedBytes, fmtChunk.numChannels, fmtChunk.bitsPerSample, firstSample))
-      {
-        decodeOk = false;
-        break;
-      }
-
-      if (fmtChunk.sampleRate == 44100)
-      {
-        int16_t secondSample = firstSample;
-
-        if (!readMonoSampleFromFile(wavFile, dataSize, consumedBytes, fmtChunk.numChannels, fmtChunk.bitsPerSample, secondSample))
-        {
-          decodeOk = false;
-          break;
-        }
-
-        int32_t mixed = static_cast<int32_t>(firstSample) + static_cast<int32_t>(secondSample);
-        sampleData[outputIndex] = static_cast<int16_t>(mixed / 2);
-      }
-      else
-      {
-        sampleData[outputIndex] = firstSample;
-      }
-    }
+    sampleData[outputIndex] = monoSample;
   }
 
   if (!decodeOk)
@@ -600,6 +573,7 @@ static bool loadSampleFromSd(uint8_t sampleIndex)
     ESP_LOGW(logTag, "Failed to decode SD WAV data: %s", source.name);
     free(sampleData);
     wavFile.close();
+
     return false;
   }
 
@@ -610,7 +584,11 @@ static bool loadSampleFromSd(uint8_t sampleIndex)
   sampleSlots[sampleIndex].valid = true;
   sampleSlots[sampleIndex].fromSd = true;
   sampleSlots[sampleIndex].storedInPsram = !sampleStoredInInternalRam;
-  strncpy(sampleSlots[sampleIndex].name, source.name, sizeof(sampleSlots[sampleIndex].name) - 1);
+
+  strncpy(sampleSlots[sampleIndex].name,
+          source.name,
+          sizeof(sampleSlots[sampleIndex].name) - 1);
+
   sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
 
   ESP_LOGI(logTag,

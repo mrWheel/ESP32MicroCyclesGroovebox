@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-24 - 17:10 ***/
+/*** Last Changed: 2026-05-27 - 11:31 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -11,7 +11,7 @@
 static const char* logTag = "AudioEngine";
 
 //-- Audio constants.
-static const int audioSampleRate = 22050;
+static const int audioSampleRate = 44100;
 static const int audioChannelCount = 2;
 static const int audioBlockFrames = 128;
 static const int audioVoiceCount = 16;
@@ -45,10 +45,24 @@ static const i2s_port_t audioI2sPort = I2S_NUM_0;
 struct Voice
 {
   bool active;
+  SampleId sampleId;
   const int16_t* sampleData;
   uint32_t frameCount;
   uint32_t position;
   uint8_t level;
+
+}; //   Voice
+
+//-- Per-sample gain percent to balance sample loudness.
+static const uint16_t sampleGainPercent[] =
+    {
+        45,  // kick
+        100, // snare
+        320, // ch
+        260, // oh
+        100, // tone
+        100  // metal
+
 };
 
 //-- Fixed voice pool.
@@ -163,8 +177,19 @@ static int16_t mixNextFrame(bool& hadVoices)
 
     hadVoices = true;
 
+    uint8_t sampleIndex = static_cast<uint8_t>(voice.sampleId);
+    uint16_t sampleGain = 100;
+
+    if (sampleIndex < (sizeof(sampleGainPercent) / sizeof(sampleGainPercent[0])))
+    {
+      sampleGain = sampleGainPercent[sampleIndex];
+    }
+
     int32_t sampleValue = static_cast<int32_t>(voice.sampleData[voice.position]);
-    mixed += (sampleValue * voice.level) / 255;
+    int32_t leveledSample = (sampleValue * static_cast<int32_t>(voice.level)) / 255;
+    int32_t gainedSample = (leveledSample * static_cast<int32_t>(sampleGain)) / 100;
+
+    mixed += gainedSample;
 
     voice.position++;
 
@@ -177,6 +202,7 @@ static int16_t mixNextFrame(bool& hadVoices)
   if (!hadVoices && stats.testToneEnabled)
   {
     float sineValue = sinf(sinePhase);
+
     mixed = static_cast<int32_t>(sineValue * 9000.0f);
     sinePhase += 2.0f * static_cast<float>(M_PI) * 220.0f / static_cast<float>(audioSampleRate);
 
@@ -326,11 +352,17 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level)
 #ifdef TEST_TONE
   (void)sampleId;
   (void)level;
+
   return;
 #else
   const SampleSlot& sample = sampleManagerGetSample(sampleId);
 
   if (!sample.valid || sample.data == nullptr || sample.frameCount == 0)
+  {
+    return;
+  }
+
+  if (level == 0)
   {
     return;
   }
@@ -352,11 +384,11 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level)
   }
 
   voices[selectedVoice].active = true;
+  voices[selectedVoice].sampleId = sampleId;
   voices[selectedVoice].sampleData = sample.data;
   voices[selectedVoice].frameCount = sample.frameCount;
   voices[selectedVoice].position = 0;
   voices[selectedVoice].level = level;
-
 #endif
 
 } //   audioEngineTriggerSample()
