@@ -529,7 +529,7 @@ This document is intended as a direct implementation guide for the Developer.
 
 ---
 
-# 15.1. Primary Goal
+## 15.1. Primary Goal
 
 Phase 4 transforms the groovebox from:
 
@@ -565,7 +565,7 @@ Phase 4 replaces this with:
 
 ---
 
-# 15.2 Core Audio Architecture
+## 15.2 Core Audio Architecture
 
 Target architecture:
 
