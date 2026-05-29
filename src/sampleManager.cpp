@@ -1,7 +1,8 @@
-/*** Last Changed: 2026-05-29 - 13:46 ***/
+/*** Last Changed: 2026-05-29 - 17:33 ***/
 #include "sampleManager.h"
 #include "appConfig.h"
 
+#include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
 #include <esp_heap_caps.h>
@@ -9,10 +10,8 @@
 #include <math.h>
 #include <string.h>
 
-//-- Logging tag.
 static const char* logTag = "SampleManager";
 
-//-- Minimal PCM format payload from the "fmt " chunk.
 struct FmtChunk
 {
   uint16_t audioFormat;
@@ -23,178 +22,148 @@ struct FmtChunk
   uint16_t bitsPerSample;
 };
 
-//-- SD sample source descriptor.
-struct SampleSource
-{
-  const char* path;
-  const char* name;
-};
+static bool initSdCard();
+static void buildFallbackSample(uint8_t sampleIndex);
+static void loadSampleGainPercent();
+static String getSampleSetDir();
+static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth);
+static void logSampleAllocationHeapState(const char* sampleName, size_t requiredBytes);
+static uint16_t readLe16(const uint8_t* data);
+static uint32_t readLe32(const uint8_t* data);
+static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset, uint32_t& dataSize);
+static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& consumedBytes, uint16_t numChannels, uint16_t bitsPerSample, int16_t& monoSample);
+static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath);
 
-//-- Fixed sample pool.
+static bool sdCardReady = false;
+static bool psramAvailable = false;
+
 static SampleSlot sampleSlots[sampleCount];
-
-//-- Synthetic fallback waveforms.
 static int16_t fallbackSamples[sampleCount][512];
 
-//-- Sample file names (relative to sample set dir)
-static const char* sampleFileNames[sampleCount] = {
-    "kick.wav",
-    "snare.wav",
-    "ch.wav",
-    "oh.wav",
-    "tone.wav",
-    "metal.wav"};
+static const char* sampleFileNames[sampleCount] =
+    {
+        "kick.wav",
+        "snare.wav",
+        "ch.wav",
+        "oh.wav",
+        "tone.wav",
+        "metal.wav"};
 
-static const char* sampleNames[sampleCount] = {
-    "kick", "snare", "ch", "oh", "tone", "metal"};
+static const char* sampleNames[sampleCount] =
+    {
+        "kick",
+        "snare",
+        "ch",
+        "oh",
+        "tone",
+        "metal"};
 
-//-- Active sample set ("S1".."S9"), default S1
 static char activeSampleSet[4] = "S1";
-
-//-- Per-sample gain percent (default 100)
 static uint16_t sampleGainPercent[sampleCount] = {100, 100, 100, 100, 100, 100};
 
-//-- Helper: get path to current sample set dir (e.g. "/samples/S1/")
+//-- Get path to current sample set directory.
 static String getSampleSetDir()
 {
   return String("/samples/") + activeSampleSet + "/";
-}
 
-//-- Helper: load gain percent from /samples/Sn/sampleGainPercent.json
-#include <ArduinoJson.h>
+} //   getSampleSetDir()
+
+//-- Load per-sample gain percentages from SD.
 static void loadSampleGainPercent()
 {
-  // Default all to 100
-  for (int i = 0; i < sampleCount; ++i)
-    sampleGainPercent[i] = 100;
-  String jsonPath = getSampleSetDir() + "sampleGainPercent.json";
-  File f = SD.open(jsonPath.c_str(), FILE_READ);
-  if (!f)
-    return;
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, f);
-  f.close();
-  if (err)
-    return;
-  JsonObject obj = doc["sampleGainPercent"];
-  if (!obj.isNull())
+  for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
   {
-    for (int i = 0; i < sampleCount; ++i)
+    sampleGainPercent[sampleIndex] = 100;
+  }
+
+  String jsonPath = getSampleSetDir() + "sampleGainPercent.json";
+  File file = SD.open(jsonPath.c_str(), FILE_READ);
+
+  if (!file)
+  {
+    return;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+
+  if (error)
+  {
+    ESP_LOGW(logTag, "Warning: Could not parse %s", jsonPath.c_str());
+    return;
+  }
+
+  JsonObject object = doc["sampleGainPercent"];
+
+  if (object.isNull())
+  {
+    return;
+  }
+
+  for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
+  {
+    if (object[sampleNames[sampleIndex]].is<uint16_t>())
     {
-      if (obj[sampleNames[i]].is<uint16_t>())
-      {
-        sampleGainPercent[i] = obj[sampleNames[i]].as<uint16_t>();
-      }
+      sampleGainPercent[sampleIndex] = object[sampleNames[sampleIndex]].as<uint16_t>();
     }
   }
-}
 
-//-- Set active sample set ("S1".."S9"). Returns true if valid and loaded.
+} //   loadSampleGainPercent()
+
+//-- Set active sample set.
 bool sampleManagerSetActiveSampleSet(const char* setName)
 {
   if (!setName || strlen(setName) < 2 || setName[0] != 'S' || setName[1] < '1' || setName[1] > '9')
+  {
     return false;
+  }
+
   strncpy(activeSampleSet, setName, sizeof(activeSampleSet) - 1);
   activeSampleSet[sizeof(activeSampleSet) - 1] = '\0';
-  loadSampleGainPercent();
-  // Optionally reload samples here if hot-swap is supported
-  return true;
-}
 
-//-- Get active sample set name
+  loadSampleGainPercent();
+
+  return true;
+
+} //   sampleManagerSetActiveSampleSet()
+
+//-- Get active sample set name.
 const char* sampleManagerGetActiveSampleSet()
 {
   return activeSampleSet;
-}
 
-//-- Get per-sample gain percent
+} //   sampleManagerGetActiveSampleSet()
+
+//-- Return gain percentage for one sample.
 uint16_t sampleManagerGetSampleGainPercent(SampleId sampleId)
 {
   if (sampleId >= sampleCount)
+  {
     return 100;
+  }
+
   return sampleGainPercent[sampleId];
-}
 
-//-- True when SD card mount succeeded.
-static bool sdCardReady = false;
+} //   sampleManagerGetSampleGainPercent()
 
-//-- True when SPIRAM is available at runtime.
-static bool psramAvailable = false;
-
-//-- Build absolute child path from directory and entry name.
-static String buildSdChildPath(const char* parentPath, const char* entryName)
+//-- Read little-endian 16-bit value.
+static uint16_t readLe16(const uint8_t* data)
 {
-  String childPath = String(entryName);
+  return static_cast<uint16_t>(data[0]) |
+         (static_cast<uint16_t>(data[1]) << 8);
 
-  if (childPath.startsWith("/"))
-  {
-    return childPath;
-  }
+} //   readLe16()
 
-  if (strcmp(parentPath, "/") == 0)
-  {
-    return String("/") + childPath;
-  }
-
-  return String(parentPath) + "/" + childPath;
-
-} //   buildSdChildPath()
-
-//-- Log one SD directory recursively.
-static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth)
+//-- Read little-endian 32-bit value.
+static uint32_t readLe32(const uint8_t* data)
 {
-  File directory = SD.open(directoryPath, FILE_READ);
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) |
+         (static_cast<uint32_t>(data[3]) << 24);
 
-  if (!directory)
-  {
-    ESP_LOGW(logTag, "Cannot open SD directory: %s", directoryPath);
-    return;
-  }
-
-  if (!directory.isDirectory())
-  {
-    ESP_LOGW(logTag, "SD path is not a directory: %s", directoryPath);
-    directory.close();
-    return;
-  }
-
-  while (true)
-  {
-    File entry = directory.openNextFile();
-    String entryPath;
-
-    if (!entry)
-    {
-      break;
-    }
-
-    entryPath = buildSdChildPath(directoryPath, entry.name());
-
-    String indent = "";
-
-    for (uint8_t level = 0; level < depth; level++)
-    {
-      indent += "  ";
-    }
-
-    ESP_LOGI(logTag,
-             "%s%s (%s, %lu bytes)",
-             indent.c_str(),
-             entryPath.c_str(),
-             entry.isDirectory() ? "dir" : "file",
-             static_cast<unsigned long>(entry.size()));
-
-    if (entry.isDirectory())
-    {
-      logSdDirectoryRecursive(entryPath.c_str(), static_cast<uint8_t>(depth + 1));
-    }
-
-    entry.close();
-  }
-
-  directory.close();
-
-} //   logSdDirectoryRecursive()
+} //   readLe32()
 
 //-- Log current heap status for sample allocation diagnostics.
 static void logSampleAllocationHeapState(const char* sampleName, size_t requiredBytes)
@@ -214,24 +183,6 @@ static void logSampleAllocationHeapState(const char* sampleName, size_t required
            static_cast<unsigned long>(largestPsramBlockBytes));
 
 } //   logSampleAllocationHeapState()
-
-//-- Read little-endian 16-bit value.
-static uint16_t readLe16(const uint8_t* data)
-{
-  return static_cast<uint16_t>(data[0]) |
-         (static_cast<uint16_t>(data[1]) << 8);
-
-} //   readLe16()
-
-//-- Read little-endian 32-bit value.
-static uint32_t readLe32(const uint8_t* data)
-{
-  return static_cast<uint32_t>(data[0]) |
-         (static_cast<uint32_t>(data[1]) << 8) |
-         (static_cast<uint32_t>(data[2]) << 16) |
-         (static_cast<uint32_t>(data[3]) << 24);
-
-} //   readLe32()
 
 //-- Build deterministic fallback drum-ish waveforms.
 static void buildFallbackSample(uint8_t sampleIndex)
@@ -262,7 +213,62 @@ static void buildFallbackSample(uint8_t sampleIndex)
 
 } //   buildFallbackSample()
 
-//-- Parse RIFF chunks directly from file and locate "fmt " + "data" sections.
+//-- Log an SD directory recursively.
+static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth)
+{
+  File directory = SD.open(directoryPath);
+
+  if (!directory)
+  {
+    ESP_LOGW(logTag, "Warning: Could not open directory %s", directoryPath);
+    return;
+  }
+
+  if (!directory.isDirectory())
+  {
+    ESP_LOGW(logTag, "Warning: Path is not a directory: %s", directoryPath);
+    directory.close();
+    return;
+  }
+
+  while (true)
+  {
+    File entry = directory.openNextFile();
+
+    if (!entry)
+    {
+      break;
+    }
+
+    ESP_LOGI(logTag,
+             "%s%s%s",
+             directoryPath,
+             entry.name(),
+             entry.isDirectory() ? "/" : "");
+
+    if (entry.isDirectory() && depth > 0)
+    {
+      String childPath = String(directoryPath);
+
+      if (!childPath.endsWith("/"))
+      {
+        childPath += "/";
+      }
+
+      childPath += entry.name();
+      childPath += "/";
+
+      logSdDirectoryRecursive(childPath.c_str(), depth - 1);
+    }
+
+    entry.close();
+  }
+
+  directory.close();
+
+} //   logSdDirectoryRecursive()
+
+//-- Parse RIFF chunks directly from file and locate fmt and data sections.
 static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset, uint32_t& dataSize)
 {
   uint8_t riffHeader[12] = {0};
@@ -293,28 +299,22 @@ static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& 
   while ((static_cast<uint32_t>(wavFile.position()) + 8U) <= fileSize)
   {
     uint8_t chunkHeader[8] = {0};
-    const char* chunkId;
-    uint32_t chunkSize;
-    uint32_t chunkDataOffset;
-    uint32_t chunkEndOffset;
 
     if (wavFile.read(chunkHeader, sizeof(chunkHeader)) != static_cast<int>(sizeof(chunkHeader)))
     {
       return false;
     }
 
-    chunkId = reinterpret_cast<const char*>(chunkHeader);
-    chunkSize = readLe32(&chunkHeader[4]);
-    chunkDataOffset = static_cast<uint32_t>(wavFile.position());
+    uint32_t chunkSize = readLe32(&chunkHeader[4]);
+    uint32_t chunkDataOffset = static_cast<uint32_t>(wavFile.position());
+    uint32_t chunkEndOffset = chunkDataOffset + chunkSize;
 
-    if ((chunkDataOffset + chunkSize) > fileSize)
+    if (chunkEndOffset > fileSize)
     {
       return false;
     }
 
-    chunkEndOffset = chunkDataOffset + chunkSize;
-
-    if (memcmp(chunkId, "fmt ", 4) == 0)
+    if (memcmp(chunkHeader, "fmt ", 4) == 0)
     {
       uint8_t fmtData[16] = {0};
 
@@ -336,7 +336,7 @@ static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& 
       fmtChunk.bitsPerSample = readLe16(&fmtData[14]);
       fmtFound = true;
     }
-    else if (memcmp(chunkId, "data", 4) == 0)
+    else if (memcmp(chunkHeader, "data", 4) == 0)
     {
       dataOffset = chunkDataOffset;
       dataSize = chunkSize;
@@ -345,7 +345,6 @@ static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& 
 
     wavFile.seek(chunkEndOffset);
 
-    //-- RIFF chunks are word-aligned.
     if ((chunkSize & 1U) != 0U)
     {
       if ((chunkEndOffset + 1U) > fileSize)
@@ -398,7 +397,7 @@ static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& c
     else
     {
       uint8_t sampleBytes[3] = {0};
-      int32_t signed24;
+      int32_t signed24 = 0;
 
       if ((consumedBytes + 3U) > dataSize)
       {
@@ -442,7 +441,6 @@ static bool initSdCard()
 {
   static const uint32_t initFrequenciesHz[] = {400000U, 1000000U, 4000000U};
 
-  // Shared SPI bus with TFT: deselect both devices before mounting SD.
   pinMode(PIN_TFT_CS, OUTPUT);
   digitalWrite(PIN_TFT_CS, HIGH);
   pinMode(PIN_SD_CS, OUTPUT);
@@ -452,10 +450,8 @@ static bool initSdCard()
   SPI.end();
   SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
 
-  // Let board-level pull-ups and CS lines settle.
   delay(20);
 
-  // Send dummy clocks with CS high so cards reliably enter SPI mode.
   SPI.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
 
   for (uint8_t dummyIndex = 0; dummyIndex < 16; dummyIndex++)
@@ -489,6 +485,7 @@ static bool initSdCard()
                  PIN_SD_SCK,
                  PIN_SD_MISO,
                  PIN_SD_MOSI);
+
         return true;
       }
     }
@@ -497,20 +494,137 @@ static bool initSdCard()
   }
 
   ESP_LOGW(logTag,
-           "SD mount failed (CS=%d SCK=%d MISO=%d MOSI=%d)",
+           "Warning: SD mount failed (CS=%d SCK=%d MISO=%d MOSI=%d)",
            PIN_SD_CS,
            PIN_SD_SCK,
            PIN_SD_MISO,
            PIN_SD_MOSI);
+
   return false;
 
 } //   initSdCard()
 
-//-- Decode one WAV file from SD into sample slot storage.
-//-- Decode one WAV file from SD into sample slot storage.
+//-- Load and decode a WAV file from SD into the sample slot.
+static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
+{
+  if (!wavPath || sampleIndex >= sampleCount)
+  {
+    return false;
+  }
+
+  File wavFile = SD.open(wavPath, FILE_READ);
+
+  if (!wavFile)
+  {
+    return false;
+  }
+
+  FmtChunk fmt = {};
+  uint32_t dataOffset = 0;
+  uint32_t dataSize = 0;
+
+  if (!parseWavLayoutFromFile(wavFile, fmt, dataOffset, dataSize))
+  {
+    wavFile.close();
+    return false;
+  }
+
+  if (fmt.audioFormat != 1 ||
+      fmt.sampleRate != 44100 ||
+      (fmt.bitsPerSample != 16 && fmt.bitsPerSample != 24) ||
+      (fmt.numChannels != 1 && fmt.numChannels != 2))
+  {
+    wavFile.close();
+    return false;
+  }
+
+  uint32_t frameCount = dataSize / (fmt.numChannels * (fmt.bitsPerSample / 8));
+
+  if (frameCount == 0 || frameCount > (44100 * 10))
+  {
+    wavFile.close();
+    return false;
+  }
+
+  size_t allocBytes = frameCount * sizeof(int16_t);
+
+  logSampleAllocationHeapState(sampleNames[sampleIndex], allocBytes);
+
+  int16_t* buffer = nullptr;
+  bool usedPsram = false;
+
+  if (psramAvailable)
+  {
+    buffer = static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    usedPsram = (buffer != nullptr);
+  }
+
+  if (!buffer)
+  {
+    buffer = static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    usedPsram = false;
+  }
+
+  if (!buffer)
+  {
+    ESP_LOGE(logTag,
+             "Error: Sample %s memory allocation failed (%lu bytes)",
+             sampleNames[sampleIndex],
+             static_cast<unsigned long>(allocBytes));
+
+    wavFile.close();
+    return false;
+  }
+
+  wavFile.seek(dataOffset);
+
+  uint32_t consumedBytes = 0;
+
+  for (uint32_t frame = 0; frame < frameCount; frame++)
+  {
+    int16_t monoSample = 0;
+
+    if (!readMonoSampleFromFile(wavFile, dataSize, consumedBytes, fmt.numChannels, fmt.bitsPerSample, monoSample))
+    {
+      ESP_LOGE(logTag,
+               "Error: Sample %s decode error at frame %lu",
+               sampleNames[sampleIndex],
+               static_cast<unsigned long>(frame));
+
+      free(buffer);
+      wavFile.close();
+
+      return false;
+    }
+
+    buffer[frame] = monoSample;
+  }
+
+  wavFile.close();
+
+  if (sampleSlots[sampleIndex].fromSd &&
+      sampleSlots[sampleIndex].data &&
+      sampleSlots[sampleIndex].data != fallbackSamples[sampleIndex])
+  {
+    free(const_cast<int16_t*>(sampleSlots[sampleIndex].data));
+  }
+
+  sampleSlots[sampleIndex].data = buffer;
+  sampleSlots[sampleIndex].frameCount = frameCount;
+  sampleSlots[sampleIndex].valid = true;
+  sampleSlots[sampleIndex].fromSd = true;
+  sampleSlots[sampleIndex].storedInPsram = usedPsram;
+
+  strncpy(sampleSlots[sampleIndex].name,
+          sampleNames[sampleIndex],
+          sizeof(sampleSlots[sampleIndex].name) - 1);
+  sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
+
+  return true;
+
+} //   loadSampleFromSdPath()
 
 //-- Initialize sample pool and load WAV files from SD.
-
 bool sampleManagerInit()
 {
   sdCardReady = initSdCard();
@@ -522,7 +636,7 @@ bool sampleManagerInit()
 
   if (!sdCardReady)
   {
-    ESP_LOGW(logTag, "SD unavailable, all tracks use fallback waveforms");
+    ESP_LOGW(logTag, "Warning: SD unavailable, all tracks use fallback waveforms");
   }
   else
   {
@@ -531,37 +645,45 @@ bool sampleManagerInit()
     loadSampleGainPercent();
   }
 
-  // Load samples from /samples/Sn/
   String sampleSetDir = getSampleSetDir();
+
   for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
   {
+    buildFallbackSample(sampleIndex);
+
     sampleSlots[sampleIndex].data = fallbackSamples[sampleIndex];
     sampleSlots[sampleIndex].frameCount = 512;
     sampleSlots[sampleIndex].valid = true;
     sampleSlots[sampleIndex].fromSd = false;
     sampleSlots[sampleIndex].storedInPsram = false;
-    strncpy(sampleSlots[sampleIndex].name, sampleNames[sampleIndex], sizeof(sampleSlots[sampleIndex].name) - 1);
+
+    strncpy(sampleSlots[sampleIndex].name,
+            sampleNames[sampleIndex],
+            sizeof(sampleSlots[sampleIndex].name) - 1);
     sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
-    buildFallbackSample(sampleIndex);
 
     if (sdCardReady)
     {
-      // Build full path: /samples/Sn/<name>.wav
       String wavPath = sampleSetDir + sampleFileNames[sampleIndex];
-      File wavFile = SD.open(wavPath.c_str(), FILE_READ);
-      if (wavFile)
+
+      ESP_LOGI(logTag,
+               "Loading sample %s from %s",
+               sampleNames[sampleIndex],
+               wavPath.c_str());
+
+      if (loadSampleFromSdPath(sampleIndex, wavPath.c_str()))
       {
-        wavFile.close();
-        // Patch: temporarily use legacy loader, but with new path
-        // (Refactor loadSampleFromSd to take a path if needed)
-        // For now, just call loadSampleFromSd(sampleIndex) after setting sampleSources
-        // But sampleSources is now gone, so inline the logic or refactor loader
-        // (For brevity, fallback to using fallback if not found)
-        // TODO: Refactor loadSampleFromSd to take a path
+        ESP_LOGI(logTag,
+                 "Loaded SD sample %s: %lu frames, %s",
+                 sampleNames[sampleIndex],
+                 static_cast<unsigned long>(sampleSlots[sampleIndex].frameCount),
+                 sampleSlots[sampleIndex].storedInPsram ? "PSRAM" : "RAM");
       }
       else
       {
-        ESP_LOGW(logTag, "Missing SD sample: %s", wavPath.c_str());
+        ESP_LOGW(logTag,
+                 "Warning: Missing or invalid sample %s, using fallback",
+                 wavPath.c_str());
       }
     }
   }

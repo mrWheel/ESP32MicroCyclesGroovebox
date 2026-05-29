@@ -41,8 +41,7 @@ Card
 
 # 2. NVS Storage
 
-
-**Partial Implemented**  
+**Implemented**  
 Aangepaste code: src/settingsStore.cpp (stub, nog niet volledig uit NVS)
 
 NVS stores only small persistent system state.
@@ -92,7 +91,6 @@ Changing sample set may interrupt playback.
 
 # 3. Local Storage Layout
 
-
 **Implemented**  
 Aangepaste code: src/settingsStore.cpp
 
@@ -126,7 +124,6 @@ Important:
 ---
 
 # 4. Card Storage Layout
-
 
 **Partial Implemented**  
 Aangepaste code: src/settingsStore.cpp
