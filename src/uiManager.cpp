@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 18:42 ***/
+/*** Last Changed: 2026-05-29 - 13:46 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -34,7 +34,7 @@ enum ParameterPage : uint8_t
 };
 
 //-- Settings menu entries.
-static const int settingsEntryCount = 15;
+static const int settingsEntryCount = 12;
 static const int settingsFirstActionIndex = 3;
 static const int patternListMaxEntries = static_cast<int>(patternStoreMaxEntries * 2U);
 static const int menuVisibleLineCount = 9;
@@ -62,16 +62,15 @@ struct UiState
   bool tempoEditOpen;
   bool editPopupOpen;
   bool editPopupValueEdit;
+  int editPopupSelection;
   uint8_t editPopupChainFocus;
   int tempoEditSelection;
-  int editPopupSelection;
   bool wifiManagerConfirmOpen;
   bool eraseWifiConfirmOpen;
   bool patternListOpen;
   bool patternDeleteMode;
   int patternListSourceFilter;
   bool patternListNeedsRefresh;
-  bool newPatternLetterPickerOpen;
   bool patternStatusOpen;
   bool wifiManagerWaitingForCredentials;
   bool wifiManagerPortalSeenActive;
@@ -82,11 +81,7 @@ struct UiState
   int menuFirstVisibleIndex;
   int patternListSelection;
   int patternListFirstVisibleIndex;
-  int newPatternLetterSelection;
-  int newPatternStorageSelection;
-  int newPatternFieldSelection;
   int patternCount;
-  bool newPatternFieldValueEdit;
   uint32_t patternStatusUntilMs;
   uint32_t eraseWifiRestartAtMs;
   uint32_t lastDrawMs;
@@ -108,6 +103,8 @@ struct UiState
   String patternListDisplayItems[patternListMaxEntries];
   PatternEntrySource patternSources[patternListMaxEntries];
   String chainSlotPatternNames[sequencerPatternCount];
+  bool localStorageMenuOpen;
+  bool cardStorageMenuOpen;
 };
 
 //-- Runtime state.
@@ -174,28 +171,6 @@ static void saveChainSettingsForPattern();
 static void flushPendingChainSettings();
 
 //-- Rotate selected New Pattern letter in full A..Z range.
-static void cycleNewPatternLetter(int delta)
-{
-  if (delta < 0)
-  {
-    uiState.newPatternLetterSelection--;
-
-    if (uiState.newPatternLetterSelection < 0)
-    {
-      uiState.newPatternLetterSelection = 25;
-    }
-  }
-  else if (delta > 0)
-  {
-    uiState.newPatternLetterSelection++;
-
-    if (uiState.newPatternLetterSelection > 25)
-    {
-      uiState.newPatternLetterSelection = 0;
-    }
-  }
-
-} //   cycleNewPatternLetter()
 
 //-- Format free-byte value as B, KB or MB depending on magnitude.
 static String formatBytesAdaptive(size_t bytes)
@@ -843,114 +818,20 @@ static void selectNextPatternInSeries(int direction)
 
 } //   selectNextPatternInSeries()
 
-//-- Draw letter picker popup overlay for New Pattern action.
-static void drawNewPatternLetterPickerOverlay()
-{
-  char selectedLetter = static_cast<char>('A' + uiState.newPatternLetterSelection);
-  String nextPatternName = "(No slots)";
-  String options[4];
-  char popupTitle[32];
-  char nameLine[32];
-  char freeLine[32];
-  char bytesLine[32];
-  String freeText;
-  int byteBasedSlots = -1;
-  int nameBasedSlots = -1;
-  int freeSlots = -1;
-  size_t totalBytes = 0;
-  size_t usedBytes = 0;
-  size_t freeBytes = 0;
-  bool usageAvailable = false;
-  PatternStorageTarget storageTarget = storageTargetFromPatternLetter(selectedLetter);
-  const char* storageLabel = (storageTarget == PatternStorageTarget::Card) ? "Card" : "Local";
-
-  if (storageTarget == PatternStorageTarget::Card)
-  {
-    settingsStoreFindNextPatternNameForLetterOnCard(selectedLetter, nextPatternName);
-    settingsStoreCountAvailablePatternSlotsForLetterOnCard(selectedLetter, nameBasedSlots);
-    usageAvailable = settingsStoreGetSdUsage(totalBytes, usedBytes, freeBytes);
-  }
-  else
-  {
-    settingsStoreFindNextPatternNameForLetter(selectedLetter, nextPatternName);
-    settingsStoreCountAvailablePatternSlotsForLetter(selectedLetter, nameBasedSlots);
-    usageAvailable = settingsStoreGetLittleFsUsage(totalBytes, usedBytes, freeBytes);
-  }
-
-  if (nextPatternName != "(No slots)")
-  {
-    snprintf(popupTitle, sizeof(popupTitle), "New Pattern %s", nextPatternName.c_str());
-  }
-  else
-  {
-    snprintf(popupTitle, sizeof(popupTitle), "New Pattern (full)");
-  }
-
-  snprintf(nameLine, sizeof(nameLine), "Pattern Name >%c<", selectedLetter);
-
-  if (usageAvailable)
-  {
-    byteBasedSlots = static_cast<int>(freeBytes / estimatedPatternBytes);
-    freeText = formatBytesAdaptive(freeBytes);
-    snprintf(bytesLine, sizeof(bytesLine), "%s free: %s", storageLabel, freeText.c_str());
-  }
-  else
-  {
-    snprintf(bytesLine, sizeof(bytesLine), "%s free: ?", storageLabel);
-  }
-
-  if (nameBasedSlots >= 0 && byteBasedSlots >= 0)
-  {
-    freeSlots = (nameBasedSlots < byteBasedSlots) ? nameBasedSlots : byteBasedSlots;
-  }
-  else if (nameBasedSlots >= 0)
-  {
-    freeSlots = nameBasedSlots;
-  }
-  else if (byteBasedSlots >= 0)
-  {
-    freeSlots = byteBasedSlots;
-  }
-
-  if (freeSlots >= 0)
-  {
-    snprintf(freeLine, sizeof(freeLine), "Free slots: %d", freeSlots);
-  }
-  else
-  {
-    snprintf(freeLine, sizeof(freeLine), "Free slots: ?");
-  }
-
-  options[0] = nameLine;
-  options[1] = freeLine;
-  options[2] = bytesLine;
-  options[3] = "Medium=create";
-
-  display.drawSelectionOverlay(popupTitle, options, 4, 0);
-
-} //   drawNewPatternLetterPickerOverlay()
-
-//-- Redraw only New Pattern popup overlay for smooth encoder interaction.
-static void drawNewPatternPopupOverlayOnly()
-{
-  drawNewPatternLetterPickerOverlay();
-
-} //   drawNewPatternPopupOverlayOnly()
-
 //-- Draw status popup overlay with up to 3 wrapped lines split by '\n'.
 static void drawPatternStatusPopupOverlay()
 {
   String popupLines[3];
   int lineCount = 0;
-  int cursorStart = 0;
+  int cursor_start = 0;
 
   while (lineCount < 3)
   {
-    int newLineIndex = uiState.patternStatusText.indexOf('\n', cursorStart);
+    int newLineIndex = uiState.patternStatusText.indexOf('\n', cursor_start);
 
     if (newLineIndex < 0)
     {
-      String tail = uiState.patternStatusText.substring(cursorStart);
+      String tail = uiState.patternStatusText.substring(cursor_start);
 
       if (tail.length() > 0)
       {
@@ -960,9 +841,9 @@ static void drawPatternStatusPopupOverlay()
       break;
     }
 
-    String segment = uiState.patternStatusText.substring(cursorStart, newLineIndex);
+    String segment = uiState.patternStatusText.substring(cursor_start, newLineIndex);
     popupLines[lineCount++] = fitListRowText(segment);
-    cursorStart = newLineIndex + 1;
+    cursor_start = newLineIndex + 1;
   }
 
   if (lineCount == 0)
@@ -1006,7 +887,7 @@ static void normalizeMenuSelection(int direction)
 {
   if (uiState.menuSelection < settingsFirstActionIndex)
   {
-    uiState.menuSelection = settingsFirstActionIndex;
+    uiState.menuSelection = 0;
   }
 
   if (uiState.menuSelection >= settingsEntryCount)
@@ -1020,7 +901,7 @@ static void normalizeMenuSelection(int direction)
 
     if (uiState.menuSelection < settingsFirstActionIndex)
     {
-      uiState.menuSelection = settingsEntryCount - 1;
+      uiState.menuSelection = 0;
     }
 
     if (uiState.menuSelection >= settingsEntryCount)
@@ -1103,13 +984,17 @@ static void refreshPatternList()
     }
   }
 
-  if (includeCard && settingsStoreListPatternsOnCard(patternScanBuffer, patternStoreMaxEntries, listedCount))
+  if (includeCard)
   {
-    for (size_t index = 0; index < listedCount && uiState.patternCount < patternListMaxEntries; index++)
+    String groupName = settingsStoreGetActivePatternGroup();
+    if (settingsStoreListPatternsInGroupOnCard(groupName, patternScanBuffer, patternStoreMaxEntries, listedCount))
     {
-      uiState.patternNames[uiState.patternCount] = patternScanBuffer[index];
-      uiState.patternSources[uiState.patternCount] = PatternEntrySource::Card;
-      uiState.patternCount++;
+      for (size_t index = 0; index < listedCount && uiState.patternCount < patternListMaxEntries; index++)
+      {
+        uiState.patternNames[uiState.patternCount] = patternScanBuffer[index];
+        uiState.patternSources[uiState.patternCount] = PatternEntrySource::Card;
+        uiState.patternCount++;
+      }
     }
   }
 
@@ -1183,7 +1068,8 @@ static bool saveActivePattern(PatternStorageTarget* outStorageTarget = nullptr)
 
   if (storageTarget == PatternStorageTarget::Card)
   {
-    if (!settingsStoreSavePatternToCard(targetName, patternData))
+    String groupName = settingsStoreGetActivePatternGroup();
+    if (!settingsStoreSavePatternToCard(groupName, targetName, patternData))
     {
       return false;
     }
@@ -1231,7 +1117,8 @@ static bool createNewPatternWithLetter(char patternLetter)
 
   if (storageTarget == PatternStorageTarget::Card)
   {
-    if (!settingsStoreSavePatternToCard(targetName, patternData))
+    String groupName = settingsStoreGetActivePatternGroup();
+    if (!settingsStoreSavePatternToCard(groupName, targetName, patternData))
     {
       return false;
     }
@@ -1279,7 +1166,8 @@ static bool loadSelectedPattern()
 
   if (selectedSource == PatternEntrySource::Card)
   {
-    if (!settingsStoreLoadPatternFromCard(selectedName, patternData))
+    String groupName = settingsStoreGetActivePatternGroup();
+    if (!settingsStoreLoadPatternFromCard(groupName, selectedName, patternData))
     {
       return false;
     }
@@ -1325,7 +1213,8 @@ static bool deleteSelectedPattern(String* outDeletedName = nullptr, PatternEntry
 
   if (selectedSource == PatternEntrySource::Card)
   {
-    if (!settingsStoreDeletePatternFromCard(selectedName))
+    String groupName = settingsStoreGetActivePatternGroup();
+    if (!settingsStoreDeletePatternFromCard(groupName, selectedName))
     {
       return false;
     }
@@ -1606,7 +1495,7 @@ static void drawSystemSettingsScreen()
   }
 
   String items[settingsEntryCount];
-  bool disabledItems[settingsEntryCount] = {true, true, true, false, false, false, false, false, false, false, false, false, false, false, false};
+  bool disabledItems[settingsEntryCount] = {true, true, true, false, false, false, false, false, false, false, false, false};
   String ssidValue = systemManagerGetSsid();
   String ipValue = systemManagerGetIpAddress();
   String macValue = systemManagerGetMacAddress();
@@ -1615,16 +1504,15 @@ static void drawSystemSettingsScreen()
   const char* themeName = colorProfiles[activeThemeIndex].colorName;
   int displayRotation = displayGetRotation();
   bool encoderReversed = input.getEncoderDirectionReversed();
-  char loadLocalEntry[40];
-  char loadCardEntry[40];
-  char saveEntry[40];
+
+  char localStorageEntry[40];
+  char cardStorageEntry[40];
   char themeEntry[32];
   char rotationEntry[40];
   char encoderOrderEntry[32];
 
-  snprintf(loadLocalEntry, sizeof(loadLocalEntry), "Load from Local");
-  snprintf(loadCardEntry, sizeof(loadCardEntry), "Load from Card");
-  snprintf(saveEntry, sizeof(saveEntry), "Save Pattern (%s)", patternLabel.c_str());
+  snprintf(localStorageEntry, sizeof(localStorageEntry), "Local Storage");
+  snprintf(cardStorageEntry, sizeof(cardStorageEntry), "Card Storage");
   snprintf(themeEntry, sizeof(themeEntry), "Set Theme (%s)", themeName);
   snprintf(rotationEntry, sizeof(rotationEntry), "Rotate Display (%d)", displayRotation);
   snprintf(encoderOrderEntry, sizeof(encoderOrderEntry), "Encoder Order (%s)", encoderReversed ? "B-A" : "A-B");
@@ -1632,26 +1520,18 @@ static void drawSystemSettingsScreen()
   items[0] = fitListRowText("SSID: " + ssidValue);
   items[1] = fitListRowText("IP: " + ipValue);
   items[2] = fitListRowText("MAC: " + macValue);
-  items[3] = fitListRowText(loadLocalEntry);
-  items[4] = fitListRowText(loadCardEntry);
-  items[5] = fitListRowText(saveEntry);
-  items[6] = "New Pattern";
-  items[7] = "Delete Pattern";
-  items[8] = "Erase WiFi Credentials";
-  items[9] = "Start WiFi Manager";
-  items[10] = fitListRowText(themeEntry);
-  items[11] = fitListRowText(rotationEntry);
-  items[12] = fitListRowText(encoderOrderEntry);
-  items[13] = "Restart Groovebox";
-  items[14] = "Exit";
+  items[3] = fitListRowText(localStorageEntry);
+  items[4] = fitListRowText(cardStorageEntry);
+  items[5] = "Erase WiFi credentials";
+  items[6] = "Start WiFiManager";
+  items[7] = fitListRowText(themeEntry);
+  items[8] = fitListRowText(rotationEntry);
+  items[9] = fitListRowText(encoderOrderEntry);
+  items[10] = "Restart Groovebox";
+  items[11] = "Exit";
 
   updateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount, uiState.menuFirstVisibleIndex);
   display.drawListScreenWithDisabledItems("System Settings", items, settingsEntryCount, uiState.menuSelection, uiState.menuFirstVisibleIndex, disabledItems);
-
-  if (uiState.newPatternLetterPickerOpen)
-  {
-    drawNewPatternLetterPickerOverlay();
-  }
 
   if (uiState.patternStatusOpen)
   {
@@ -1757,95 +1637,62 @@ static void executeMenuAction()
   int nextThemeIndex;
   int nextRotation;
 
+  // 3: Local Storage submenu
   if (uiState.menuSelection == 3)
   {
-    uiState.patternListSourceFilter = static_cast<int>(PatternStorageTarget::Local);
-    uiState.patternListNeedsRefresh = true;
-    uiState.patternListOpen = true;
-    uiState.patternDeleteMode = false;
-    uiState.patternListSelection = 0;
-    uiState.patternListFirstVisibleIndex = 0;
+    uiState.localStorageMenuOpen = true;
+    uiState.menuOpen = false;
+    uiState.dirty = true;
+    return;
   }
+  // 4: Card Storage submenu
   else if (uiState.menuSelection == 4)
   {
-    uiState.patternListSourceFilter = static_cast<int>(PatternStorageTarget::Card);
-    uiState.patternListNeedsRefresh = true;
-    uiState.patternListOpen = true;
-    uiState.patternDeleteMode = false;
-    uiState.patternListSelection = 0;
-    uiState.patternListFirstVisibleIndex = 0;
+    uiState.cardStorageMenuOpen = true;
+    uiState.menuOpen = false;
+    uiState.dirty = true;
+    return;
   }
+  // 5: Erase WiFi credentials
   else if (uiState.menuSelection == 5)
-  {
-    PatternStorageTarget savedTarget = PatternStorageTarget::Local;
-
-    if (saveActivePattern(&savedTarget))
-    {
-      String targetLabel = (savedTarget == PatternStorageTarget::Card) ? "SD card" : "Local storage";
-      showPatternStatus(String("Save OK\n") + uiState.activePatternName + " -> " + targetLabel, 2000);
-    }
-    else
-    {
-      showPatternStatus("Save failed", 2000);
-    }
-  }
-  else if (uiState.menuSelection == 6)
-  {
-    char activeLetter = patternLetterFromName(uiState.activePatternName);
-
-    if (activeLetter < 'A' || activeLetter > 'Z')
-    {
-      activeLetter = 'A';
-    }
-
-    uiState.newPatternLetterPickerOpen = true;
-    uiState.newPatternLetterSelection = static_cast<int>(activeLetter - 'A');
-    uiState.newPatternStorageSelection = static_cast<int>(PatternStorageTarget::Local);
-    uiState.newPatternFieldSelection = 0;
-    uiState.newPatternFieldValueEdit = true;
-  }
-  else if (uiState.menuSelection == 7)
-  {
-    uiState.patternListNeedsRefresh = true;
-    uiState.patternListOpen = true;
-    uiState.patternDeleteMode = true;
-    uiState.patternListSourceFilter = -1;
-    uiState.patternListSelection = 0;
-    uiState.patternListFirstVisibleIndex = 0;
-  }
-  else if (uiState.menuSelection == 8)
   {
     uiState.eraseWifiConfirmOpen = true;
     uiState.eraseWifiConfirmSelection = 1;
   }
-  else if (uiState.menuSelection == 9)
+  // 6: Start WiFiManager
+  else if (uiState.menuSelection == 6)
   {
     uiState.wifiManagerConfirmOpen = true;
     uiState.wifiManagerConfirmSelection = 1;
   }
-  else if (uiState.menuSelection == 10)
+  // 7: Set Theme
+  else if (uiState.menuSelection == 7)
   {
     activeThemeIndex = displayGetThemeColorIndex();
     nextThemeIndex = (activeThemeIndex + 1) % colorProfileCount;
     displaySetThemeColorIndex(nextThemeIndex);
     saveRuntimeSettingsFromCurrentState();
   }
-  else if (uiState.menuSelection == 11)
+  // 8: Rotate Display
+  else if (uiState.menuSelection == 8)
   {
     nextRotation = (displayGetRotation() == 1) ? 3 : 1;
     displaySetRotation(nextRotation);
     saveRuntimeSettingsFromCurrentState();
   }
-  else if (uiState.menuSelection == 12)
+  // 9: Encoder Order
+  else if (uiState.menuSelection == 9)
   {
     input.setEncoderDirectionReversed(!input.getEncoderDirectionReversed());
     saveRuntimeSettingsFromCurrentState();
   }
-  else if (uiState.menuSelection == 13)
+  // 10: Restart Groovebox
+  else if (uiState.menuSelection == 10)
   {
     systemManagerQueueCommand(SystemCommand::restartNow);
   }
-  else if (uiState.menuSelection == 14)
+  // 11: Exit
+  else if (uiState.menuSelection == 11)
   {
     uiState.menuOpen = false;
   }
@@ -1870,7 +1717,7 @@ void uiManagerInit()
   uiState.eraseWifiConfirmOpen = false;
   uiState.patternListOpen = false;
   uiState.patternDeleteMode = false;
-  uiState.newPatternLetterPickerOpen = false;
+
   uiState.patternStatusOpen = false;
   uiState.wifiManagerWaitingForCredentials = false;
   uiState.wifiManagerPortalSeenActive = false;
@@ -1880,10 +1727,7 @@ void uiManagerInit()
   uiState.patternListSelection = 0;
   uiState.menuFirstVisibleIndex = 0;
   uiState.patternListFirstVisibleIndex = 0;
-  uiState.newPatternLetterSelection = 0;
-  uiState.newPatternStorageSelection = static_cast<int>(PatternStorageTarget::Local);
-  uiState.newPatternFieldSelection = 0;
-  uiState.newPatternFieldValueEdit = false;
+
   uiState.patternCount = 0;
   uiState.patternStatusUntilMs = 0;
   uiState.eraseWifiRestartAtMs = 0;
@@ -2038,14 +1882,6 @@ void uiManagerUpdate()
     return;
   }
 
-  if (uiState.menuOpen && uiState.newPatternLetterPickerOpen && !uiState.patternStatusOpen)
-  {
-    uiState.lastDrawMs = nowMs;
-    drawNewPatternPopupOverlayOnly();
-    uiState.dirty = false;
-    return;
-  }
-
   uiState.lastDrawMs = nowMs;
 
   if (uiState.menuOpen)
@@ -2123,7 +1959,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     uiState.eraseWifiConfirmOpen = false;
     uiState.patternListOpen = false;
     uiState.patternDeleteMode = false;
-    uiState.newPatternLetterPickerOpen = false;
     uiState.patternStatusOpen = false;
     uiState.patternStatusText = "";
 
@@ -2156,21 +1991,15 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
 
     if (encoderEvent == ENCODER_EVENT_LEFT)
     {
-      if (uiState.newPatternLetterPickerOpen)
-      {
-        cycleNewPatternLetter(-1);
-      }
-      else if (uiState.patternListOpen)
+      if (uiState.patternListOpen)
       {
         if (uiState.patternCount > 0)
         {
           uiState.patternListSelection--;
-
           if (uiState.patternListSelection < 0)
           {
             uiState.patternListSelection = uiState.patternCount - 1;
           }
-
           updateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount, uiState.patternListFirstVisibleIndex);
         }
       }
@@ -2191,21 +2020,15 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
     else if (encoderEvent == ENCODER_EVENT_RIGHT)
     {
-      if (uiState.newPatternLetterPickerOpen)
-      {
-        cycleNewPatternLetter(1);
-      }
-      else if (uiState.patternListOpen)
+      if (uiState.patternListOpen)
       {
         if (uiState.patternCount > 0)
         {
           uiState.patternListSelection++;
-
           if (uiState.patternListSelection >= uiState.patternCount)
           {
             uiState.patternListSelection = 0;
           }
-
           updateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount, uiState.patternListFirstVisibleIndex);
         }
       }
@@ -2226,28 +2049,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
     else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
     {
-      if (uiState.newPatternLetterPickerOpen)
-      {
-        char selectedLetter = static_cast<char>('A' + uiState.newPatternLetterSelection);
-        PatternStorageTarget storageTarget = storageTargetFromPatternLetter(selectedLetter);
-
-        if (createNewPatternWithLetter(selectedLetter))
-        {
-          String destinationLabel = (storageTarget == PatternStorageTarget::Card) ? " on Card" : " local";
-
-          showPatternStatus(String("Created ") + uiState.activePatternName + destinationLabel, 2000);
-          uiState.newPatternLetterPickerOpen = false;
-          uiState.newPatternFieldValueEdit = false;
-          uiState.patternListOpen = false;
-          uiState.patternDeleteMode = false;
-          uiState.patternListFirstVisibleIndex = 0;
-        }
-        else
-        {
-          showPatternStatus("Create failed", 2000);
-        }
-      }
-      else if (uiState.patternListOpen)
+      if (uiState.patternListOpen)
       {
         if (uiState.patternCount > 0)
         {
@@ -2264,7 +2066,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           {
             String deletedName;
             PatternEntrySource deletedSource = PatternEntrySource::Local;
-
             if (deleteSelectedPattern(&deletedName, &deletedSource))
             {
               if (deletedSource == PatternEntrySource::Card)
@@ -2280,7 +2081,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
             {
               showPatternStatus("Delete failed", 2000);
             }
-
             if (uiState.patternCount == 0)
             {
               uiState.patternListOpen = false;
@@ -2297,7 +2097,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           uiState.wifiManagerWaitingForCredentials = true;
           uiState.wifiManagerPortalSeenActive = false;
         }
-
         uiState.wifiManagerConfirmOpen = false;
       }
       else if (uiState.eraseWifiConfirmOpen)
@@ -2307,7 +2106,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           uiState.eraseWifiRestartPending = true;
           uiState.eraseWifiRestartAtMs = millis() + 1200;
         }
-
         uiState.eraseWifiConfirmOpen = false;
       }
       else if (!uiState.wifiManagerWaitingForCredentials)
@@ -2569,14 +2367,10 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
 
   if (uiState.menuOpen)
   {
+
     if (buttonEvent == BUTTON_EVENT_SHORT_PRESS)
     {
-      if (uiState.newPatternLetterPickerOpen)
-      {
-        uiState.newPatternLetterPickerOpen = false;
-        showPatternStatus("Creation\nCancelled", 2000);
-      }
-      else if (uiState.patternListOpen)
+      if (uiState.patternListOpen)
       {
         uiState.patternListOpen = false;
         uiState.patternDeleteMode = false;
@@ -2604,7 +2398,6 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
         uiState.editPopupChainFocus = chainPopupFocusEnable;
         uiState.tempoEditSelection = 0;
       }
-
       uiState.dirty = true;
     }
 

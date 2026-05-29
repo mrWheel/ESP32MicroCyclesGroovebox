@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 18:42 ***/
+/*** Last Changed: 2026-05-29 - 13:46 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -19,7 +19,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.6.4";
+const char* PROG_VERSION = "v0.6.5";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -333,29 +333,20 @@ static void runSdSmokeTestAndHalt()
     }
   }
 
-  const char* samplePaths[] = {
-      "/samples/kick.wav",
-      "/samples/snare.wav",
-      "/samples/ch.wav",
-      "/samples/oh.wav",
-      "/samples/tone.wav",
-      "/samples/metal.wav"};
-
-  for (size_t sampleIndex = 0; sampleIndex < (sizeof(samplePaths) / sizeof(samplePaths[0])); sampleIndex++)
+  // Use active sample set directory for SD sample test
+  const char* sampleSet = sampleManagerGetActiveSampleSet();
+  const char* sampleNames[] = {"kick.wav", "snare.wav", "ch.wav", "oh.wav", "tone.wav", "metal.wav"};
+  String sampleSetDir = String("/samples/") + sampleSet + "/";
+  for (size_t sampleIndex = 0; sampleIndex < 6; sampleIndex++)
   {
-    const char* samplePath = samplePaths[sampleIndex];
-    File sampleFile = SD.open(samplePath, FILE_READ);
-
+    String samplePath = sampleSetDir + sampleNames[sampleIndex];
+    File sampleFile = SD.open(samplePath.c_str(), FILE_READ);
     if (!sampleFile)
     {
-      ESP_LOGW(logTag, "SD smoke test: missing %s", samplePath);
+      ESP_LOGW(logTag, "SD smoke test: missing %s", samplePath.c_str());
       continue;
     }
-
-    ESP_LOGI(logTag,
-             "SD smoke test: found %s (%lu bytes)",
-             samplePath,
-             static_cast<unsigned long>(sampleFile.size()));
+    ESP_LOGI(logTag, "SD smoke test: found %s (%lu bytes)", samplePath.c_str(), static_cast<unsigned long>(sampleFile.size()));
     sampleFile.close();
   }
 

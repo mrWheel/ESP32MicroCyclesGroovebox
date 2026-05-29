@@ -1,9 +1,13 @@
+/*** Last Changed: 2026-05-29 - 13:46 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 #ifndef SETTINGS_STORE_H
 #define SETTINGS_STORE_H
 
 #include <Arduino.h>
 #include <stdint.h>
+
+//-- Get active pattern group name (from NVS or stub)
+String settingsStoreGetActivePatternGroup();
 
 #include "sequencer.h"
 
@@ -65,14 +69,14 @@ bool settingsStoreGetSdUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t
 //-- Save pattern payload to LittleFS.
 bool settingsStoreSavePattern(const String& patternName, const PatternData& patternData);
 
-//-- Save pattern payload to SD card (same JSON schema).
-bool settingsStoreSavePatternToCard(const String& patternName, const PatternData& patternData);
+//-- Save pattern payload to SD card (with group).
+bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName, const PatternData& patternData);
 
-//-- List available pattern names from SD card /patterns.
-bool settingsStoreListPatternsOnCard(String patternNames[], size_t maxCount, size_t& outCount);
+//-- List available pattern names in a group on SD card.
+bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[], size_t maxCount, size_t& outCount);
 
-//-- Load pattern payload from SD card.
-bool settingsStoreLoadPatternFromCard(const String& patternName, PatternData& patternData);
+//-- Load pattern payload from SD card (with group).
+bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName, PatternData& patternData);
 
 //-- Load pattern payload from LittleFS.
 bool settingsStoreLoadPattern(const String& patternName, PatternData& patternData);
@@ -89,7 +93,7 @@ bool settingsStoreSavePatternChainSettings(const String& patternName, bool chain
 //-- Delete one pattern file.
 bool settingsStoreDeletePattern(const String& patternName);
 
-//-- Delete one SD card pattern file.
-bool settingsStoreDeletePatternFromCard(const String& patternName);
+//-- Delete one SD card pattern file (with group).
+bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName);
 
 #endif

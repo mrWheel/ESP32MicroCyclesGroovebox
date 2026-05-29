@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 17:49 ***/
+/*** Last Changed: 2026-05-29 - 13:46 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -41,17 +41,6 @@ static const i2s_port_t audioI2sPort = I2S_NUM_0;
 #else
 #define AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT
 #endif
-
-//-- Per-sample gain percent to balance sample loudness.
-static const uint16_t sampleGainPercent[] =
-    {
-        45,  // kick
-        100, // snare
-        320, // ch
-        260, // oh
-        100, // tone
-        100  // metal
-};
 
 //-- Fixed voice pool (Phase 4)
 Voice voices[MAX_VOICES];
@@ -166,12 +155,7 @@ static int16_t mixNextFrame(bool& hadVoices)
     hadVoices = true;
 
     uint8_t sampleIndex = static_cast<uint8_t>(voice.sampleId);
-    uint16_t sampleGain = 100;
-
-    if (sampleIndex < (sizeof(sampleGainPercent) / sizeof(sampleGainPercent[0])))
-    {
-      sampleGain = sampleGainPercent[sampleIndex];
-    }
+    uint16_t sampleGain = sampleManagerGetSampleGainPercent(static_cast<SampleId>(sampleIndex));
 
     int32_t sampleValue = static_cast<int32_t>(voice.sampleData[voice.position]);
     int32_t leveledSample = (sampleValue * static_cast<int32_t>(voice.level)) / 255;

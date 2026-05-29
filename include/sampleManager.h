@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 11:31 ***/
+/*** Last Changed: 2026-05-29 - 13:46 ***/
 #ifndef SAMPLE_MANAGER_H
 #define SAMPLE_MANAGER_H
 
@@ -28,11 +28,20 @@ struct SampleSlot
   char name[16];
 };
 
-//-- Initialize SD card and load samples.
+//-- Initialize SD card and load samples (from active sample set).
 bool sampleManagerInit();
 
 //-- True when SD card is mounted and usable.
 bool sampleManagerIsSdCardReady();
+
+//-- Set the active sample set ("S1".."S9"). Returns true if successful.
+bool sampleManagerSetActiveSampleSet(const char* setName);
+
+//-- Get the active sample set name (e.g., "S1").
+const char* sampleManagerGetActiveSampleSet();
+
+//-- Get per-sample gain percent for a given SampleId (loaded from sampleGainPercent.json).
+uint16_t sampleManagerGetSampleGainPercent(SampleId sampleId);
 
 //-- Get sample slot by identifier.
 const SampleSlot& sampleManagerGetSample(SampleId sampleId);

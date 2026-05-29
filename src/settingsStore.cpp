@@ -1,6 +1,14 @@
+/*** Last Changed: 2026-05-29 - 13:46 ***/
+
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 #include "settingsStore.h"
 #include "appConfig.h"
+
+//-- Get active pattern group name (stub: DEFAULT, later uit NVS)
+String settingsStoreGetActivePatternGroup()
+{
+  return "DEFAULT";
+}
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -13,7 +21,7 @@ static const char* logTag = "SettingsStore";
 //-- Settings and pattern paths.
 static const char* settingsPath = "/settings.json";
 static const char* patternDirectoryPath = "/patterns";
-static const char* patternFileExtension = ".json";
+static const char* patternFileExtension = ""; // No extension for user-facing, but keep for compatibility if needed
 static const char* patternTempFileSuffix = ".tmp";
 static const size_t patternSaveReserveBytes = 512;
 static const char* trackJsonNames[sequencerTrackCount] = {"KICK", "SNARE", "CH", "OH", "TONE", "METAL"};
@@ -144,29 +152,34 @@ static bool ensurePatternDirectory()
 
 } //   ensurePatternDirectory()
 
-//-- Build full pattern file path.
+//-- Build full pattern file path for Local (LittleFS): /patterns/pNN
 static String buildPatternPath(const String& patternName)
 {
-  String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(patternDirectoryPath) + "/" + normalizedName + patternFileExtension;
-
-  return patternPath;
-
+  // Enforce pNN naming (p01..p99)
+  String normalizedName = patternName;
+  if (normalizedName.length() == 3 && normalizedName[0] == 'p' && isDigit(normalizedName[1]) && isDigit(normalizedName[2]))
+  {
+    // OK
+  }
+  else
+  {
+    // fallback: always use pNN, default to p01
+    normalizedName = "p01";
+  }
+  return String(patternDirectoryPath) + "/" + normalizedName;
 } //   buildPatternPath()
 
-//-- Extract pattern name from absolute file path.
+//-- Extract pattern name from absolute file path (expects /patterns/pNN)
 static String patternNameFromPath(const String& fullPath)
 {
   int slashIndex = fullPath.lastIndexOf('/');
   String fileName = (slashIndex >= 0) ? fullPath.substring(slashIndex + 1) : fullPath;
-
-  if (!fileName.endsWith(patternFileExtension))
+  // Accept pNN only
+  if (fileName.length() == 3 && fileName[0] == 'p' && isDigit(fileName[1]) && isDigit(fileName[2]))
   {
-    return "";
+    return fileName;
   }
-
-  return fileName.substring(0, fileName.length() - strlen(patternFileExtension));
-
+  return "";
 } //   patternNameFromPath()
 
 //-- Default runtime settings.
@@ -735,55 +748,48 @@ bool settingsStoreInitPatternStorage()
 
 } //   settingsStoreInitPatternStorage()
 
-//-- List available pattern names in sorted order.
+//-- List available pattern names in sorted order (p01..p99)
 bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& outCount)
 {
   outCount = 0;
-
   if (patternNames == nullptr || maxCount == 0)
   {
     return false;
   }
-
   if (!ensurePatternDirectory())
   {
     return false;
   }
-
   File directory = LittleFS.open(patternDirectoryPath, "r");
-
   if (!directory)
   {
     ESP_LOGW(logTag, "Failed to open pattern directory");
     return false;
   }
-
   File entry = directory.openNextFile();
-
   while (entry && outCount < maxCount)
   {
     if (!entry.isDirectory())
     {
       String patternName = patternNameFromPath(entry.name());
-
-      if (isPatternNameLetterNumberFormat(patternName))
+      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) && isDigit(patternName[2]) && patternName != "p00")
       {
         patternNames[outCount] = patternName;
         outCount++;
       }
     }
-
     entry.close();
     entry = directory.openNextFile();
   }
-
   directory.close();
-
+  // Sort numerically (p01 < p02 < ... < p99)
   for (size_t leftIndex = 0; leftIndex < outCount; leftIndex++)
   {
     for (size_t rightIndex = leftIndex + 1; rightIndex < outCount; rightIndex++)
     {
-      if (patternNames[rightIndex].compareTo(patternNames[leftIndex]) < 0)
+      int leftNum = patternNames[leftIndex].substring(1).toInt();
+      int rightNum = patternNames[rightIndex].substring(1).toInt();
+      if (rightNum < leftNum)
       {
         String temporaryName = patternNames[leftIndex];
         patternNames[leftIndex] = patternNames[rightIndex];
@@ -791,9 +797,7 @@ bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& o
       }
     }
   }
-
   return true;
-
 } //   settingsStoreListPatterns()
 
 //-- List available pattern names for one series letter (A..Z), sorted numerically.
@@ -1198,130 +1202,157 @@ bool settingsStoreSavePattern(const String& patternName, const PatternData& patt
 } //   settingsStoreSavePattern()
 
 //-- Save pattern payload to one JSON file on SD card.
-bool settingsStoreSavePatternToCard(const String& patternName, const PatternData& patternData)
+//-- Save pattern payload to one JSON file on SD card in /patterns/<GroupName>/pNN
+bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName, const PatternData& patternData)
 {
-  String normalizedName;
-  String patternPath;
-  String tempPatternPath;
-  JsonDocument jsonDocument;
-
-  normalizedName = normalizePatternName(patternName);
-  patternPath = String(sdPatternDirectoryPath) + "/" + normalizedName + patternFileExtension;
-  tempPatternPath = patternPath + patternTempFileSuffix;
-
+  // groupName: validated pattern group name (max 8 chars, A-Z/0-9)
+  // patternName: pNN
   if (SD.cardType() == CARD_NONE)
   {
     ESP_LOGW(logTag, "SD card not available for pattern save");
     return false;
   }
-
-  File patternDirectory = SD.open(sdPatternDirectoryPath, FILE_READ);
-
-  if (!patternDirectory || !patternDirectory.isDirectory())
+  String groupDir = String(sdPatternDirectoryPath) + "/" + groupName;
+  if (!SD.exists(groupDir))
   {
-    patternDirectory.close();
-
-    if (!SD.mkdir(sdPatternDirectoryPath))
+    if (!SD.mkdir(groupDir))
     {
-      ESP_LOGW(logTag, "Failed to create SD pattern directory %s", sdPatternDirectoryPath);
+      ESP_LOGW(logTag, "Failed to create SD pattern group directory %s", groupDir.c_str());
       return false;
     }
   }
-  else
-  {
-    patternDirectory.close();
-  }
-
-  buildPatternJsonDocument(normalizedName, patternData, jsonDocument);
-
-  if (sdPatternPathExists(tempPatternPath))
+  String patternPath = groupDir + "/" + patternName;
+  String tempPatternPath = patternPath + patternTempFileSuffix;
+  JsonDocument jsonDocument;
+  buildPatternJsonDocument(patternName, patternData, jsonDocument);
+  if (SD.exists(tempPatternPath))
   {
     SD.remove(tempPatternPath);
   }
-
   File file = SD.open(tempPatternPath, FILE_WRITE);
-
   if (!file)
   {
     ESP_LOGW(logTag, "Failed to open SD %s for write", tempPatternPath.c_str());
     return false;
   }
-
   bool success = (serializeJson(jsonDocument, file) > 0);
   file.close();
-
   if (!success)
   {
     ESP_LOGW(logTag, "Failed to serialize SD %s", tempPatternPath.c_str());
     SD.remove(tempPatternPath);
     return false;
   }
-
-  if (sdPatternPathExists(patternPath))
+  if (SD.exists(patternPath))
   {
     SD.remove(patternPath);
   }
-
   if (!SD.rename(tempPatternPath, patternPath))
   {
     ESP_LOGW(logTag, "Failed to rename SD %s to %s", tempPatternPath.c_str(), patternPath.c_str());
     SD.remove(tempPatternPath);
     return false;
   }
-
   return true;
-
 } //   settingsStoreSavePatternToCard()
 
-//-- List available pattern names from SD card /patterns.
-bool settingsStoreListPatternsOnCard(String patternNames[], size_t maxCount, size_t& outCount)
+//-- List available pattern group names on SD card (subdirectories of /patterns)
+bool settingsStoreListPatternGroupsOnCard(String groupNames[], size_t maxCount, size_t& outCount)
 {
   outCount = 0;
-
-  if (patternNames == nullptr || maxCount == 0)
+  if (groupNames == nullptr || maxCount == 0)
   {
     return false;
   }
-
   if (SD.cardType() == CARD_NONE)
   {
     return false;
   }
-
   File directory = SD.open(sdPatternDirectoryPath, FILE_READ);
-
   if (!directory || !directory.isDirectory())
   {
     directory.close();
     return false;
   }
-
   File entry = directory.openNextFile();
+  while (entry && outCount < maxCount)
+  {
+    if (entry.isDirectory())
+    {
+      String groupName = String(entry.name());
+      int slashIdx = groupName.lastIndexOf('/');
+      if (slashIdx >= 0)
+        groupName = groupName.substring(slashIdx + 1);
+      // Validate group name: max 8 chars, A-Z/0-9 only
+      if (groupName.length() <= 8 && groupName.length() > 0)
+      {
+        bool valid = true;
+        for (size_t i = 0; i < groupName.length(); i++)
+        {
+          char c = groupName[i];
+          if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')))
+          {
+            valid = false;
+            break;
+          }
+        }
+        if (valid)
+        {
+          groupNames[outCount] = groupName;
+          outCount++;
+        }
+      }
+    }
+    entry.close();
+    entry = directory.openNextFile();
+  }
+  directory.close();
+  return true;
+} //   settingsStoreListPatternGroupsOnCard()
 
+//-- List available pattern names in a group on SD card: /patterns/<GroupName>/pNN
+bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[], size_t maxCount, size_t& outCount)
+{
+  outCount = 0;
+  if (patternNames == nullptr || maxCount == 0)
+  {
+    return false;
+  }
+  if (SD.cardType() == CARD_NONE)
+  {
+    return false;
+  }
+  String groupDir = String(sdPatternDirectoryPath) + "/" + groupName;
+  File directory = SD.open(groupDir, FILE_READ);
+  if (!directory || !directory.isDirectory())
+  {
+    directory.close();
+    return false;
+  }
+  File entry = directory.openNextFile();
   while (entry && outCount < maxCount)
   {
     if (!entry.isDirectory())
     {
       String patternName = patternNameFromPath(entry.name());
-
-      if (isPatternNameLetterNumberFormat(patternName))
+      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) && isDigit(patternName[2]) && patternName != "p00")
       {
         patternNames[outCount] = patternName;
         outCount++;
       }
     }
-
     entry.close();
     entry = directory.openNextFile();
   }
-
   directory.close();
-
+  // Sort numerically
   for (size_t leftIndex = 0; leftIndex < outCount; leftIndex++)
   {
     for (size_t rightIndex = leftIndex + 1; rightIndex < outCount; rightIndex++)
     {
-      if (patternNames[rightIndex].compareTo(patternNames[leftIndex]) < 0)
+      int leftNum = patternNames[leftIndex].substring(1).toInt();
+      int rightNum = patternNames[rightIndex].substring(1).toInt();
+      if (rightNum < leftNum)
       {
         String temporaryName = patternNames[leftIndex];
         patternNames[leftIndex] = patternNames[rightIndex];
@@ -1329,16 +1360,14 @@ bool settingsStoreListPatternsOnCard(String patternNames[], size_t maxCount, siz
       }
     }
   }
-
   return true;
+} //   settingsStoreListPatternsInGroupOnCard()
 
-} //   settingsStoreListPatternsOnCard()
-
-//-- Load pattern payload from SD card.
-bool settingsStoreLoadPatternFromCard(const String& patternName, PatternData& patternData)
+//-- Load pattern payload from SD card (with group).
+bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName, PatternData& patternData)
 {
   String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + normalizedName + patternFileExtension;
+  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName + patternFileExtension;
 
   if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
   {
@@ -1436,13 +1465,6 @@ bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outE
   normalizedName = normalizeStrictPatternToken(patternName);
 
   if (normalizedName.isEmpty())
-  {
-    return false;
-  }
-
-  patternPath = buildPatternPath(normalizedName);
-
-  if (!ensurePatternDirectory() || !patternPathExists(patternPath))
   {
     return false;
   }
@@ -1614,11 +1636,11 @@ bool settingsStoreDeletePattern(const String& patternName)
 
 } //   settingsStoreDeletePattern()
 
-//-- Delete one SD card pattern file.
-bool settingsStoreDeletePatternFromCard(const String& patternName)
+//-- Delete one SD card pattern file (with group).
+bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName)
 {
   String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + normalizedName + patternFileExtension;
+  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName + patternFileExtension;
 
   if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
   {
