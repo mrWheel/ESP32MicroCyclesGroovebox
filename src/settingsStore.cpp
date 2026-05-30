@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-30 - 12:41 ***/
+/*** Last Changed: 2026-05-30 - 14:05 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 
 #include "settingsStore.h"
@@ -1558,86 +1558,139 @@ bool settingsStoreListPatternGroupsOnCard(String groupNames[], size_t maxCount, 
   return true;
 } //   settingsStoreListPatternGroupsOnCard()
 
-//-- List available pattern names in a group on SD card: /patterns/<GroupName>/pNN
+//-- List available pattern names in a group on SD card: /patterns/<groupName>/pNN.
 bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[],
                                             size_t maxCount, size_t& outCount)
 {
   outCount = 0;
+
   if (patternNames == nullptr || maxCount == 0)
   {
     return false;
   }
+
   if (SD.cardType() == CARD_NONE)
   {
+    ESP_LOGW(logTag, "SD card not available while listing group %s", groupName.c_str());
     return false;
   }
-  String groupDir = String(sdPatternDirectoryPath) + "/" + groupName;
-  File directory = SD.open(groupDir, FILE_READ);
+
+  String groupDirectoryPath = String(sdPatternDirectoryPath) + "/" + groupName;
+  File directory = SD.open(groupDirectoryPath, FILE_READ);
+
   if (!directory || !directory.isDirectory())
   {
-    directory.close();
+    if (directory)
+    {
+      directory.close();
+    }
+
+    ESP_LOGW(logTag, "Card pattern group not found: %s", groupDirectoryPath.c_str());
     return false;
   }
+
   File entry = directory.openNextFile();
+
   while (entry && outCount < maxCount)
   {
     if (!entry.isDirectory())
     {
-      String patternName = patternNameFromPath(entry.name());
-      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) &&
-          isDigit(patternName[2]) && patternName != "p00")
+      String fileName = String(entry.name());
+      int slashIndex = fileName.lastIndexOf('/');
+
+      if (slashIndex >= 0)
       {
-        patternNames[outCount] = patternName;
+        fileName = fileName.substring(slashIndex + 1);
+      }
+
+      if (fileName.endsWith(".json"))
+      {
+        fileName = fileName.substring(0, fileName.length() - 5);
+      }
+
+      if (fileName.length() == 3 && fileName[0] == 'p' && isDigit(fileName[1]) &&
+          isDigit(fileName[2]) && fileName != "p00")
+      {
+        patternNames[outCount] = fileName;
         outCount++;
       }
     }
+
     entry.close();
     entry = directory.openNextFile();
   }
+
   directory.close();
-  // Sort numerically
+
   for (size_t leftIndex = 0; leftIndex < outCount; leftIndex++)
   {
     for (size_t rightIndex = leftIndex + 1; rightIndex < outCount; rightIndex++)
     {
-      int leftNum = patternNames[leftIndex].substring(1).toInt();
-      int rightNum = patternNames[rightIndex].substring(1).toInt();
-      if (rightNum < leftNum)
+      int leftNumber = patternNames[leftIndex].substring(1).toInt();
+      int rightNumber = patternNames[rightIndex].substring(1).toInt();
+
+      if (rightNumber < leftNumber)
       {
         String temporaryName = patternNames[leftIndex];
+
         patternNames[leftIndex] = patternNames[rightIndex];
         patternNames[rightIndex] = temporaryName;
       }
     }
   }
+
+  ESP_LOGI(logTag, "Listed %u Card patterns in group %s", static_cast<unsigned>(outCount),
+           groupName.c_str());
+
   return true;
+
 } //   settingsStoreListPatternsInGroupOnCard()
 
-//-- Load pattern payload from SD card (with group).
+//-- Load pattern payload from SD card group.
 bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName,
                                       PatternData& patternData)
 {
   String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName +
-                       patternFileExtension;
+  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName;
+  String jsonPatternPath = patternPath + ".json";
+  String pathToLoad = "";
 
-  if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
+  if (SD.cardType() == CARD_NONE)
   {
+    ESP_LOGW(logTag, "SD card not available while loading %s/%s", groupName.c_str(),
+             normalizedName.c_str());
     return false;
   }
 
-  File file = SD.open(patternPath, FILE_READ);
+  if (SD.exists(patternPath))
+  {
+    pathToLoad = patternPath;
+  }
+  else if (SD.exists(jsonPatternPath))
+  {
+    pathToLoad = jsonPatternPath;
+  }
+  else
+  {
+    ESP_LOGW(logTag, "Card pattern file not found: %s or %s", patternPath.c_str(),
+             jsonPatternPath.c_str());
+
+    return false;
+  }
+
+  File file = SD.open(pathToLoad, FILE_READ);
 
   if (!file)
   {
-    ESP_LOGW(logTag, "Failed to open SD %s for read", patternPath.c_str());
+    ESP_LOGW(logTag, "Failed to open Card pattern %s for read", pathToLoad.c_str());
     return false;
   }
 
   if (file.size() == 0)
   {
     file.close();
-    ESP_LOGW(logTag, "Empty SD pattern file %s", patternPath.c_str());
+
+    ESP_LOGW(logTag, "Empty Card pattern file %s", pathToLoad.c_str());
     return false;
   }
 
@@ -1648,13 +1701,88 @@ bool settingsStoreLoadPatternFromCard(const String& groupName, const String& pat
 
   if (error)
   {
-    ESP_LOGW(logTag, "Invalid SD %s (%s)", patternPath.c_str(), error.c_str());
+    ESP_LOGW(logTag, "Invalid Card pattern %s (%s)", pathToLoad.c_str(), error.c_str());
+
     return false;
   }
 
-  return parsePatternJsonDocument(jsonDocument, patternData, patternPath);
+  if (!parsePatternJsonDocument(jsonDocument, patternData, pathToLoad))
+  {
+    ESP_LOGW(logTag, "Failed to parse Card pattern %s", pathToLoad.c_str());
+    return false;
+  }
+
+  ESP_LOGI(logTag, "Loaded Card pattern %s", pathToLoad.c_str());
+
+  return true;
 
 } //   settingsStoreLoadPatternFromCard()
+
+//-- Copy one complete Card pattern group into Local working storage.
+bool settingsStoreLoadPatternGroupFromCardToLocal(const String& groupName)
+{
+  String localPatternNames[patternStoreMaxEntries];
+  String cardPatternNames[patternStoreMaxEntries];
+
+  size_t localPatternCount = 0;
+  size_t cardPatternCount = 0;
+
+  if (groupName.length() == 0)
+  {
+    ESP_LOGW(logTag, "Cannot load empty Card pattern group name");
+    return false;
+  }
+
+  if (!settingsStoreListPatternsInGroupOnCard(groupName, cardPatternNames, patternStoreMaxEntries,
+                                              cardPatternCount))
+  {
+    ESP_LOGW(logTag, "Cannot list Card pattern group %s", groupName.c_str());
+    return false;
+  }
+
+  if (cardPatternCount == 0)
+  {
+    ESP_LOGW(logTag, "Card pattern group %s has no patterns", groupName.c_str());
+    return false;
+  }
+
+  if (settingsStoreListPatterns(localPatternNames, patternStoreMaxEntries, localPatternCount))
+  {
+    for (size_t patternIndex = 0; patternIndex < localPatternCount; patternIndex++)
+    {
+      if (!settingsStoreDeletePattern(localPatternNames[patternIndex]))
+      {
+        ESP_LOGW(logTag, "Failed to remove Local pattern %s",
+                 localPatternNames[patternIndex].c_str());
+        return false;
+      }
+    }
+  }
+
+  for (size_t patternIndex = 0; patternIndex < cardPatternCount; patternIndex++)
+  {
+    PatternData patternData;
+    const String& patternName = cardPatternNames[patternIndex];
+
+    if (!settingsStoreLoadPatternFromCard(groupName, patternName, patternData))
+    {
+      ESP_LOGW(logTag, "Failed to load Card pattern %s/%s", groupName.c_str(), patternName.c_str());
+      return false;
+    }
+
+    if (!settingsStoreSavePattern(patternName, patternData))
+    {
+      ESP_LOGW(logTag, "Failed to save Local pattern %s", patternName.c_str());
+      return false;
+    }
+  }
+
+  ESP_LOGI(logTag, "Loaded Card pattern group %s to Local (%u patterns)", groupName.c_str(),
+           static_cast<unsigned>(cardPatternCount));
+
+  return true;
+
+} //   settingsStoreLoadPatternGroupFromCardToLocal()
 
 //-- Load one pattern JSON file into runtime payload.
 bool settingsStoreLoadPattern(const String& patternName, PatternData& patternData)

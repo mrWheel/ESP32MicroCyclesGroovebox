@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-30 - 13:21 ***/
+/*** Last Changed: 2026-05-30 - 14:05 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -36,6 +36,10 @@ enum ParameterPage : uint8_t
 
 //-- Settings menu entries.
 static const int settingsEntryCount = 13;
+//-- Special list mode for Card pattern groups.
+static const int patternListModeCardGroups = 1001;
+//-- Card Storage menu item count.
+static const int cardStorageMenuEntryCount = 5;
 static const int sampleSetListMaxEntries = 9;
 static const int settingsFirstActionIndex = 3;
 static const int patternListMaxEntries = static_cast<int>(patternStoreMaxEntries * 2U);
@@ -946,18 +950,66 @@ static void updateListFirstVisibleIndex(int selectedIndex, int itemCount, int& f
 
 } //   updateListFirstVisibleIndex()
 
-//-- Refresh cached pattern names from LittleFS.
+//-- Refresh cached pattern names.
 static void refreshPatternList()
 {
   size_t listedCount = 0;
+
+  uiState.patternCount = 0;
+
+  if (uiState.patternListSourceFilter == patternListModeCardGroups)
+  {
+    if (settingsStoreListPatternGroupsOnCard(patternScanBuffer, patternStoreMaxEntries,
+                                             listedCount))
+    {
+      for (size_t index = 0; index < listedCount && uiState.patternCount < patternListMaxEntries;
+           index++)
+      {
+        uiState.patternNames[uiState.patternCount] = patternScanBuffer[index];
+        uiState.patternSources[uiState.patternCount] = PatternEntrySource::Card;
+        uiState.patternCount++;
+      }
+    }
+
+    for (int leftIndex = 0; leftIndex < uiState.patternCount; leftIndex++)
+    {
+      for (int rightIndex = leftIndex + 1; rightIndex < uiState.patternCount; rightIndex++)
+      {
+        if (uiState.patternNames[rightIndex].compareTo(uiState.patternNames[leftIndex]) < 0)
+        {
+          String temporaryName = uiState.patternNames[leftIndex];
+          PatternEntrySource temporarySource = uiState.patternSources[leftIndex];
+
+          uiState.patternNames[leftIndex] = uiState.patternNames[rightIndex];
+          uiState.patternSources[leftIndex] = uiState.patternSources[rightIndex];
+
+          uiState.patternNames[rightIndex] = temporaryName;
+          uiState.patternSources[rightIndex] = temporarySource;
+        }
+      }
+    }
+
+    if (uiState.patternListSelection >= uiState.patternCount)
+    {
+      uiState.patternListSelection = (uiState.patternCount > 0) ? (uiState.patternCount - 1) : 0;
+    }
+
+    for (int patternIndex = 0; patternIndex < patternListMaxEntries; patternIndex++)
+    {
+      uiState.patternHasChainTarget[patternIndex] = false;
+      uiState.patternChainTargets[patternIndex] = "";
+    }
+
+    return;
+  }
+
   bool includeLocal =
       (uiState.patternListSourceFilter < 0 ||
        uiState.patternListSourceFilter == static_cast<int>(PatternStorageTarget::Local));
+
   bool includeCard =
       (uiState.patternListSourceFilter < 0 ||
        uiState.patternListSourceFilter == static_cast<int>(PatternStorageTarget::Card));
-
-  uiState.patternCount = 0;
 
   if (includeLocal &&
       settingsStoreListPatterns(patternScanBuffer, patternStoreMaxEntries, listedCount))
@@ -974,6 +1026,7 @@ static void refreshPatternList()
   if (includeCard)
   {
     String groupName = settingsStoreGetActivePatternGroup();
+
     if (settingsStoreListPatternsInGroupOnCard(groupName, patternScanBuffer, patternStoreMaxEntries,
                                                listedCount))
     {
@@ -1010,6 +1063,7 @@ static void refreshPatternList()
 
         uiState.patternNames[leftIndex] = uiState.patternNames[rightIndex];
         uiState.patternSources[leftIndex] = uiState.patternSources[rightIndex];
+
         uiState.patternNames[rightIndex] = temporaryName;
         uiState.patternSources[rightIndex] = temporarySource;
       }
@@ -1028,6 +1082,7 @@ static void refreshPatternList()
   }
 
   refreshChainSeriesPatternCache();
+
   uiState.chainTargetValid = isCurrentChainTargetValid();
 
 } //   refreshPatternList()
@@ -1178,6 +1233,71 @@ static bool loadSelectedPattern()
   return true;
 
 } //   loadSelectedPattern()
+
+//-- Load selected Card pattern group into Local working storage.
+static bool loadSelectedCardPatternGroup()
+{
+  PatternData patternData;
+  SequencerView view;
+
+  if (uiState.patternCount <= 0 || uiState.patternListSelection < 0 ||
+      uiState.patternListSelection >= uiState.patternCount)
+  {
+    return false;
+  }
+
+  String selectedGroupName = uiState.patternNames[uiState.patternListSelection];
+
+  sequencerGetView(view);
+
+  if (view.playing)
+  {
+    sequencerStopImmediately();
+  }
+
+  if (!settingsStoreLoadPatternGroupFromCardToLocal(selectedGroupName))
+  {
+    showPatternStatus("Load failed\n" + selectedGroupName, 2500);
+    return false;
+  }
+
+  if (!settingsStoreSetActivePatternGroup(selectedGroupName))
+  {
+    showPatternStatus("NVS save failed\n" + selectedGroupName, 2500);
+    return false;
+  }
+
+  if (!settingsStoreLoadPattern("p01", patternData))
+  {
+    showPatternStatus("Loaded group\nNo p01 found", 2500);
+    return false;
+  }
+
+  sequencerImportPattern(patternData);
+
+  uiState.activePatternName = "p01";
+  uiState.chainTargetPatternName = "";
+  uiState.chainTargetValid = false;
+  uiState.chainSettingsDirty = false;
+
+  for (uint8_t slotIndex = 0; slotIndex < sequencerPatternCount; slotIndex++)
+  {
+    uiState.chainSlotPatternNames[slotIndex] = "";
+    uiState.chainSlotTargetPatternNames[slotIndex] = "";
+  }
+
+  assignActivePatternNameToCurrentSlot();
+  refreshChainSeriesPatternCache();
+  loadChainSettingsForActivePattern();
+  saveRuntimeSettingsFromCurrentState();
+
+  uiState.patternListNeedsRefresh = true;
+
+  showPatternStatus("Loaded group\n" + selectedGroupName, 2500);
+
+  return true;
+
+} //   loadSelectedCardPatternGroup()
 
 //-- Delete one pattern from current list selection.
 static bool deleteSelectedPattern(String* outDeletedName = nullptr,
@@ -1466,12 +1586,11 @@ static void loadSelectedSampleSetFromMenu()
 
 } //   loadSelectedSampleSetFromMenu()
 
-//-- Draw Card Storage menu.
+//-- Draw Card Storage submenu.
 static void drawCardStorageMenu()
 {
-  // Card Storage menu entries
-  static const int cardStorageMenuEntryCount = 5;
   String items[cardStorageMenuEntryCount];
+
   items[0] = "Load Pattern";
   items[1] = "Save Pattern";
   items[2] = "Rename Pattern";
@@ -1480,12 +1599,17 @@ static void drawCardStorageMenu()
 
   updateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
                               uiState.cardStorageMenuFirstVisibleIndex);
+
   display.drawListScreen("Card Storage", items, cardStorageMenuEntryCount,
                          uiState.cardStorageMenuSelection,
                          uiState.cardStorageMenuFirstVisibleIndex);
 
-  // TODO: Add popup/status overlays if needed
-}
+  if (uiState.patternStatusOpen)
+  {
+    drawPatternStatusPopupOverlay();
+  }
+
+} //   drawCardStorageMenu()
 
 //-- Draw required system settings menu.
 static void drawSystemSettingsScreen()
@@ -1563,15 +1687,17 @@ static void drawSystemSettingsScreen()
 
     int itemCount = uiState.patternCount;
     bool activeMarked = false;
-    const char* title =
-        uiState.patternDeleteMode
-            ? "Delete Pattern"
-            : (uiState.patternListSourceFilter == static_cast<int>(PatternStorageTarget::Card)
-                   ? "Load from Card"
-                   : (uiState.patternListSourceFilter ==
-                              static_cast<int>(PatternStorageTarget::Local)
-                          ? "Load from Local"
-                          : "Load Pattern"));
+    const char* title = (uiState.patternListSourceFilter == patternListModeCardGroups)
+                            ? "Load Pattern"
+                            : (uiState.patternDeleteMode
+                                   ? "Delete Pattern"
+                                   : (uiState.patternListSourceFilter ==
+                                              static_cast<int>(PatternStorageTarget::Card)
+                                          ? "Load from Card"
+                                          : (uiState.patternListSourceFilter ==
+                                                     static_cast<int>(PatternStorageTarget::Local)
+                                                 ? "Load from Local"
+                                                 : "Load Pattern")));
 
     if (itemCount <= 0)
     {
@@ -2140,40 +2266,57 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     // Card Storage menu navigation
     if (uiState.cardStorageMenuOpen)
     {
-      const int cardStorageMenuEntryCount = 6;
       if (encoderEvent == ENCODER_EVENT_LEFT)
       {
         uiState.cardStorageMenuSelection--;
+
         if (uiState.cardStorageMenuSelection < 0)
         {
           uiState.cardStorageMenuSelection = cardStorageMenuEntryCount - 1;
         }
+
         updateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
                                     uiState.cardStorageMenuFirstVisibleIndex);
       }
       else if (encoderEvent == ENCODER_EVENT_RIGHT)
       {
         uiState.cardStorageMenuSelection++;
+
         if (uiState.cardStorageMenuSelection >= cardStorageMenuEntryCount)
         {
           uiState.cardStorageMenuSelection = 0;
         }
+
         updateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
                                     uiState.cardStorageMenuFirstVisibleIndex);
       }
       else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS ||
                encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
       {
-        // Handle Card Storage menu selection
-        if (uiState.cardStorageMenuSelection == 5) // Exit
+        if (uiState.cardStorageMenuSelection == 0)
+        {
+          uiState.patternListOpen = true;
+          uiState.patternDeleteMode = false;
+          uiState.patternListSourceFilter = patternListModeCardGroups;
+          uiState.patternListSelection = 0;
+          uiState.patternListFirstVisibleIndex = 0;
+          uiState.patternListNeedsRefresh = true;
+          uiState.cardStorageMenuOpen = false;
+        }
+        else if (uiState.cardStorageMenuSelection == 4)
         {
           uiState.cardStorageMenuOpen = false;
           uiState.cardStorageMenuSelection = 0;
           uiState.cardStorageMenuFirstVisibleIndex = 0;
         }
-        // TODO: Implement other actions for Card Storage menu
+        else
+        {
+          showPatternStatus("Not implemented\nyet", 2000);
+        }
       }
+
       uiState.dirty = true;
+
       return;
     }
 
@@ -2276,7 +2419,16 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       {
         if (uiState.patternCount > 0)
         {
-          if (!uiState.patternDeleteMode)
+          if (uiState.patternListSourceFilter == patternListModeCardGroups)
+          {
+            if (loadSelectedCardPatternGroup())
+            {
+              uiState.patternListOpen = false;
+              uiState.patternListSourceFilter = -1;
+              uiState.patternListFirstVisibleIndex = 0;
+            }
+          }
+          else if (!uiState.patternDeleteMode)
           {
             if (loadSelectedPattern())
             {
