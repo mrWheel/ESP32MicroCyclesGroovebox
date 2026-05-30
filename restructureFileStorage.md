@@ -342,6 +342,7 @@ Load Local                [REMOVE]
 Load Card                 [REMOVE]
 Local Storage   [***]
 Card Storage    [***]
+Load Sample Set [***]
 Erase WiFi credentials
 Start WiFiManager
 Set Theme <color>
@@ -353,7 +354,7 @@ Exit
 System Settings actions may interrupt playback.
 
 Remove items "Load Local" en "Load Card".
-Menu items marked with [***] are new. All other functionality, except "Load Local" and "Load Card", should stay the same. 
+Menu items marked with [***] are new. All other functionality, except "Load Local", "Load Card" and "Load Sample Set", should stay the same. 
 Don't change anything else on the existing menu items
 
 Before executing any System Settings action that modifies storage or WiFi:
@@ -365,7 +366,6 @@ Before executing any System Settings action that modifies storage or WiFi:
 ---
 
 # 8. Local Storage Menu
-
 
 **Partial Implemented**  
 Aangepaste code: src/uiManager.cpp, src/settingsStore.cpp
@@ -507,7 +507,6 @@ Input behavior:
 ---
 
 # 9. Card Storage Menu
-
 
 **Partial Implemented**  
 Aangepaste code: src/uiManager.cpp, src/settingsStore.cpp

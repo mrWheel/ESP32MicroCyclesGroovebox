@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 13:46 ***/
+/*** Last Changed: 2026-05-30 - 12:24 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -131,7 +131,8 @@ static int16_t mixNextFrame(bool& hadVoices)
   float sineValue = sinf(sinePhase);
   int32_t mixed = static_cast<int32_t>(sineValue * testToneAmplitude);
 
-  sinePhase += 2.0f * static_cast<float>(M_PI) * testToneFrequencyHz / static_cast<float>(audioSampleRate);
+  sinePhase +=
+      2.0f * static_cast<float>(M_PI) * testToneFrequencyHz / static_cast<float>(audioSampleRate);
 
   if (sinePhase > 2.0f * static_cast<float>(M_PI))
   {
@@ -293,17 +294,12 @@ bool audioEngineInit()
   ESP_LOGI(logTag, "I2S SD/EN pin=%d set HIGH", PIN_I2S_SD);
 #endif
 #ifdef AUDIO_HEADROOM_LIMITER_ENABLE
-  ESP_LOGI(logTag,
-           "Headroom limiter enabled (threshold=%d%%)",
+  ESP_LOGI(logTag, "Headroom limiter enabled (threshold=%d%%)",
            AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT);
 #endif
-  ESP_LOGI(logTag,
-           "I2S pins BCLK=%d WS=%d DOUT=%d (master gain=%d%%, requested=%d%%)",
-           pinConfig.bck_io_num,
-           pinConfig.ws_io_num,
-           pinConfig.data_out_num,
-           AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT,
-           AUDIO_MASTER_GAIN_PERCENT);
+  ESP_LOGI(logTag, "I2S pins BCLK=%d WS=%d DOUT=%d (master gain=%d%%, requested=%d%%)",
+           pinConfig.bck_io_num, pinConfig.ws_io_num, pinConfig.data_out_num,
+           AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT, AUDIO_MASTER_GAIN_PERCENT);
   ESP_LOGI(logTag, "Audio engine initialized");
 
   return true;
@@ -318,9 +314,9 @@ bool audioEngineIsOutputReady()
 
 } //   audioEngineIsOutputReady()
 
-//-- Trigger sample playback on a fixed voice slot.
 //-- Trigger sample playback with full voice params (Phase 4)
-void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, int8_t pan, uint8_t chokeGroup)
+void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, int8_t pan,
+                              uint8_t chokeGroup)
 {
 #ifdef TEST_TONE
   (void)sampleId;
@@ -344,6 +340,7 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
   }
 
   int selectedVoice = -1;
+
   for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
   {
     if (!voices[voiceIndex].active)
@@ -352,10 +349,12 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
       break;
     }
   }
+
   if (selectedVoice < 0)
   {
     selectedVoice = 0;
   }
+
   voices[selectedVoice].active = true;
   voices[selectedVoice].sampleId = sampleId;
   voices[selectedVoice].sampleData = sample.data;

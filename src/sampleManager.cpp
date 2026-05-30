@@ -1,6 +1,7 @@
-/*** Last Changed: 2026-05-29 - 17:33 ***/
+/*** Last Changed: 2026-05-30 - 12:24 ***/
 #include "sampleManager.h"
 #include "appConfig.h"
+#include "settingsStore.h"
 
 #include <ArduinoJson.h>
 #include <SD.h>
@@ -30,8 +31,11 @@ static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth);
 static void logSampleAllocationHeapState(const char* sampleName, size_t requiredBytes);
 static uint16_t readLe16(const uint8_t* data);
 static uint32_t readLe32(const uint8_t* data);
-static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset, uint32_t& dataSize);
-static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& consumedBytes, uint16_t numChannels, uint16_t bitsPerSample, int16_t& monoSample);
+static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset,
+                                   uint32_t& dataSize);
+static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& consumedBytes,
+                                   uint16_t numChannels, uint16_t bitsPerSample,
+                                   int16_t& monoSample);
 static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath);
 
 static bool sdCardReady = false;
@@ -40,23 +44,10 @@ static bool psramAvailable = false;
 static SampleSlot sampleSlots[sampleCount];
 static int16_t fallbackSamples[sampleCount][512];
 
-static const char* sampleFileNames[sampleCount] =
-    {
-        "kick.wav",
-        "snare.wav",
-        "ch.wav",
-        "oh.wav",
-        "tone.wav",
-        "metal.wav"};
+static const char* sampleFileNames[sampleCount] = {"kick.wav", "snare.wav", "ch.wav",
+                                                   "oh.wav",   "tone.wav",  "metal.wav"};
 
-static const char* sampleNames[sampleCount] =
-    {
-        "kick",
-        "snare",
-        "ch",
-        "oh",
-        "tone",
-        "metal"};
+static const char* sampleNames[sampleCount] = {"kick", "snare", "ch", "oh", "tone", "metal"};
 
 static char activeSampleSet[4] = "S1";
 static uint16_t sampleGainPercent[sampleCount] = {100, 100, 100, 100, 100, 100};
@@ -111,18 +102,140 @@ static void loadSampleGainPercent()
 
 } //   loadSampleGainPercent()
 
-//-- Set active sample set.
+//-- Return true if sample set directory exists on SD.
+static bool sampleManagerSampleSetExists(const char* sampleSetName)
+{
+  if (!sampleSetName || strlen(sampleSetName) != 2 || sampleSetName[0] != 'S' ||
+      sampleSetName[1] < '1' || sampleSetName[1] > '9')
+  {
+    return false;
+  }
+
+  String sampleSetPath = String("/samples/") + sampleSetName;
+  File directory = SD.open(sampleSetPath.c_str());
+
+  if (!directory)
+  {
+    return false;
+  }
+
+  bool exists = directory.isDirectory();
+  directory.close();
+
+  return exists;
+
+} //   sampleManagerSampleSetExists()
+
+//-- List available sample sets from Card.
+bool sampleManagerListSampleSets(char sampleSetNames[][4], uint8_t maxSampleSets,
+                                 uint8_t* sampleSetCount)
+{
+  if (!sampleSetNames || !sampleSetCount)
+  {
+    return false;
+  }
+
+  *sampleSetCount = 0;
+
+  if (!sdCardReady)
+  {
+    return false;
+  }
+
+  for (uint8_t sampleSetIndex = 1; sampleSetIndex <= 9; sampleSetIndex++)
+  {
+    char sampleSetName[4] = {0};
+
+    snprintf(sampleSetName, sizeof(sampleSetName), "S%u", sampleSetIndex);
+
+    if (sampleManagerSampleSetExists(sampleSetName))
+    {
+      strncpy(sampleSetNames[*sampleSetCount], sampleSetName, 3);
+      sampleSetNames[*sampleSetCount][3] = '\0';
+      (*sampleSetCount)++;
+
+      if (*sampleSetCount >= maxSampleSets)
+      {
+        break;
+      }
+    }
+  }
+
+  return (*sampleSetCount > 0);
+
+} //   sampleManagerListSampleSets()
+
+//-- Load another sample set from SD.
+bool sampleManagerLoadSampleSet(const char* sampleSetName)
+{
+  if (!sdCardReady)
+  {
+    ESP_LOGW(logTag, "Warning: Cannot load sample set, SD is not ready");
+    return false;
+  }
+
+  if (!sampleManagerSampleSetExists(sampleSetName))
+  {
+    ESP_LOGW(logTag, "Warning: Sample set %s does not exist",
+             sampleSetName ? sampleSetName : "null");
+    return false;
+  }
+
+  strncpy(activeSampleSet, sampleSetName, sizeof(activeSampleSet) - 1);
+  activeSampleSet[sizeof(activeSampleSet) - 1] = '\0';
+
+  loadSampleGainPercent();
+
+  String sampleSetDir = getSampleSetDir();
+
+  ESP_LOGI(logTag, "Active sample set: %s", activeSampleSet);
+
+  for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
+  {
+    if (sampleSlots[sampleIndex].fromSd && sampleSlots[sampleIndex].data &&
+        sampleSlots[sampleIndex].data != fallbackSamples[sampleIndex])
+    {
+      free(const_cast<int16_t*>(sampleSlots[sampleIndex].data));
+    }
+
+    buildFallbackSample(sampleIndex);
+
+    sampleSlots[sampleIndex].data = fallbackSamples[sampleIndex];
+    sampleSlots[sampleIndex].frameCount = 512;
+    sampleSlots[sampleIndex].valid = true;
+    sampleSlots[sampleIndex].fromSd = false;
+    sampleSlots[sampleIndex].storedInPsram = false;
+
+    strncpy(sampleSlots[sampleIndex].name, sampleNames[sampleIndex],
+            sizeof(sampleSlots[sampleIndex].name) - 1);
+    sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
+
+    String wavPath = sampleSetDir + sampleFileNames[sampleIndex];
+
+    ESP_LOGI(logTag, "Loading sample %s from %s", sampleNames[sampleIndex], wavPath.c_str());
+
+    if (!loadSampleFromSdPath(sampleIndex, wavPath.c_str()))
+    {
+      ESP_LOGW(logTag, "Warning: Missing or invalid sample %s, using fallback", wavPath.c_str());
+    }
+  }
+
+  ESP_LOGI(logTag, "Active sample set loaded: %s", activeSampleSet);
+
+  return true;
+
+} //   sampleManagerLoadSampleSet()
+
+//-- Set active sample set name.
 bool sampleManagerSetActiveSampleSet(const char* setName)
 {
-  if (!setName || strlen(setName) < 2 || setName[0] != 'S' || setName[1] < '1' || setName[1] > '9')
+  if (!setName || strlen(setName) != 2 || setName[0] != 'S' || setName[1] < '1' || setName[1] > '9')
   {
     return false;
   }
 
   strncpy(activeSampleSet, setName, sizeof(activeSampleSet) - 1);
   activeSampleSet[sizeof(activeSampleSet) - 1] = '\0';
-
-  loadSampleGainPercent();
 
   return true;
 
@@ -150,18 +263,15 @@ uint16_t sampleManagerGetSampleGainPercent(SampleId sampleId)
 //-- Read little-endian 16-bit value.
 static uint16_t readLe16(const uint8_t* data)
 {
-  return static_cast<uint16_t>(data[0]) |
-         (static_cast<uint16_t>(data[1]) << 8);
+  return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
 
 } //   readLe16()
 
 //-- Read little-endian 32-bit value.
 static uint32_t readLe32(const uint8_t* data)
 {
-  return static_cast<uint32_t>(data[0]) |
-         (static_cast<uint32_t>(data[1]) << 8) |
-         (static_cast<uint32_t>(data[2]) << 16) |
-         (static_cast<uint32_t>(data[3]) << 24);
+  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
 
 } //   readLe32()
 
@@ -169,14 +279,16 @@ static uint32_t readLe32(const uint8_t* data)
 static void logSampleAllocationHeapState(const char* sampleName, size_t requiredBytes)
 {
   size_t freeInternalBytes = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  size_t largestInternalBlockBytes = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  size_t largestInternalBlockBytes =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   size_t freePsramBytes = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  size_t largestPsramBlockBytes = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  size_t largestPsramBlockBytes =
+      heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
   ESP_LOGI(logTag,
-           "Sample allocation request for %s: need=%lu bytes, internalFree=%lu largestInternal=%lu, psramFree=%lu largestPsram=%lu",
-           sampleName,
-           static_cast<unsigned long>(requiredBytes),
+           "Sample allocation request for %s: need=%lu bytes, internalFree=%lu "
+           "largestInternal=%lu, psramFree=%lu largestPsram=%lu",
+           sampleName, static_cast<unsigned long>(requiredBytes),
            static_cast<unsigned long>(freeInternalBytes),
            static_cast<unsigned long>(largestInternalBlockBytes),
            static_cast<unsigned long>(freePsramBytes),
@@ -240,11 +352,7 @@ static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth)
       break;
     }
 
-    ESP_LOGI(logTag,
-             "%s%s%s",
-             directoryPath,
-             entry.name(),
-             entry.isDirectory() ? "/" : "");
+    ESP_LOGI(logTag, "%s%s%s", directoryPath, entry.name(), entry.isDirectory() ? "/" : "");
 
     if (entry.isDirectory() && depth > 0)
     {
@@ -269,7 +377,8 @@ static void logSdDirectoryRecursive(const char* directoryPath, uint8_t depth)
 } //   logSdDirectoryRecursive()
 
 //-- Parse RIFF chunks directly from file and locate fmt and data sections.
-static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset, uint32_t& dataSize)
+static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& dataOffset,
+                                   uint32_t& dataSize)
 {
   uint8_t riffHeader[12] = {0};
   uint32_t fileSize = static_cast<uint32_t>(wavFile.size());
@@ -361,7 +470,9 @@ static bool parseWavLayoutFromFile(File& wavFile, FmtChunk& fmtChunk, uint32_t& 
 } //   parseWavLayoutFromFile()
 
 //-- Read one mono sample frame directly from SD file data section.
-static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& consumedBytes, uint16_t numChannels, uint16_t bitsPerSample, int16_t& monoSample)
+static bool readMonoSampleFromFile(File& wavFile, uint32_t dataSize, uint32_t& consumedBytes,
+                                   uint16_t numChannels, uint16_t bitsPerSample,
+                                   int16_t& monoSample)
 {
   int16_t channelSamples[2] = {0, 0};
 
@@ -461,15 +572,14 @@ static bool initSdCard()
 
   SPI.endTransaction();
 
-  for (size_t attemptIndex = 0; attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
+  for (size_t attemptIndex = 0;
+       attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
   {
     uint32_t initFrequency = initFrequenciesHz[attemptIndex];
 
     SD.end();
 
-    ESP_LOGI(logTag,
-             "SD init attempt %u at %luHz",
-             static_cast<unsigned>(attemptIndex + 1),
+    ESP_LOGI(logTag, "SD init attempt %u at %luHz", static_cast<unsigned>(attemptIndex + 1),
              static_cast<unsigned long>(initFrequency));
 
     if (SD.begin(PIN_SD_CS, SPI, initFrequency))
@@ -478,12 +588,8 @@ static bool initSdCard()
 
       if (cardType != CARD_NONE)
       {
-        ESP_LOGI(logTag,
-                 "SD card ready (freq=%luHz, CS=%d SCK=%d MISO=%d MOSI=%d)",
-                 static_cast<unsigned long>(initFrequency),
-                 PIN_SD_CS,
-                 PIN_SD_SCK,
-                 PIN_SD_MISO,
+        ESP_LOGI(logTag, "SD card ready (freq=%luHz, CS=%d SCK=%d MISO=%d MOSI=%d)",
+                 static_cast<unsigned long>(initFrequency), PIN_SD_CS, PIN_SD_SCK, PIN_SD_MISO,
                  PIN_SD_MOSI);
 
         return true;
@@ -493,12 +599,8 @@ static bool initSdCard()
     delay(8);
   }
 
-  ESP_LOGW(logTag,
-           "Warning: SD mount failed (CS=%d SCK=%d MISO=%d MOSI=%d)",
-           PIN_SD_CS,
-           PIN_SD_SCK,
-           PIN_SD_MISO,
-           PIN_SD_MOSI);
+  ESP_LOGW(logTag, "Warning: SD mount failed (CS=%d SCK=%d MISO=%d MOSI=%d)", PIN_SD_CS, PIN_SD_SCK,
+           PIN_SD_MISO, PIN_SD_MOSI);
 
   return false;
 
@@ -529,8 +631,7 @@ static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
     return false;
   }
 
-  if (fmt.audioFormat != 1 ||
-      fmt.sampleRate != 44100 ||
+  if (fmt.audioFormat != 1 || fmt.sampleRate != 44100 ||
       (fmt.bitsPerSample != 16 && fmt.bitsPerSample != 24) ||
       (fmt.numChannels != 1 && fmt.numChannels != 2))
   {
@@ -555,22 +656,22 @@ static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
 
   if (psramAvailable)
   {
-    buffer = static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    buffer =
+        static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     usedPsram = (buffer != nullptr);
   }
 
   if (!buffer)
   {
-    buffer = static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    buffer =
+        static_cast<int16_t*>(heap_caps_malloc(allocBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     usedPsram = false;
   }
 
   if (!buffer)
   {
-    ESP_LOGE(logTag,
-             "Error: Sample %s memory allocation failed (%lu bytes)",
-             sampleNames[sampleIndex],
-             static_cast<unsigned long>(allocBytes));
+    ESP_LOGE(logTag, "Error: Sample %s memory allocation failed (%lu bytes)",
+             sampleNames[sampleIndex], static_cast<unsigned long>(allocBytes));
 
     wavFile.close();
     return false;
@@ -584,11 +685,10 @@ static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
   {
     int16_t monoSample = 0;
 
-    if (!readMonoSampleFromFile(wavFile, dataSize, consumedBytes, fmt.numChannels, fmt.bitsPerSample, monoSample))
+    if (!readMonoSampleFromFile(wavFile, dataSize, consumedBytes, fmt.numChannels,
+                                fmt.bitsPerSample, monoSample))
     {
-      ESP_LOGE(logTag,
-               "Error: Sample %s decode error at frame %lu",
-               sampleNames[sampleIndex],
+      ESP_LOGE(logTag, "Error: Sample %s decode error at frame %lu", sampleNames[sampleIndex],
                static_cast<unsigned long>(frame));
 
       free(buffer);
@@ -602,8 +702,7 @@ static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
 
   wavFile.close();
 
-  if (sampleSlots[sampleIndex].fromSd &&
-      sampleSlots[sampleIndex].data &&
+  if (sampleSlots[sampleIndex].fromSd && sampleSlots[sampleIndex].data &&
       sampleSlots[sampleIndex].data != fallbackSamples[sampleIndex])
   {
     free(const_cast<int16_t*>(sampleSlots[sampleIndex].data));
@@ -615,8 +714,7 @@ static bool loadSampleFromSdPath(uint8_t sampleIndex, const char* wavPath)
   sampleSlots[sampleIndex].fromSd = true;
   sampleSlots[sampleIndex].storedInPsram = usedPsram;
 
-  strncpy(sampleSlots[sampleIndex].name,
-          sampleNames[sampleIndex],
+  strncpy(sampleSlots[sampleIndex].name, sampleNames[sampleIndex],
           sizeof(sampleSlots[sampleIndex].name) - 1);
   sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
 
@@ -630,9 +728,7 @@ bool sampleManagerInit()
   sdCardReady = initSdCard();
   psramAvailable = (heap_caps_get_total_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) > 0);
 
-  ESP_LOGI(logTag,
-           "PSRAM: %s",
-           psramAvailable ? "available" : "not available");
+  ESP_LOGI(logTag, "PSRAM: %s", psramAvailable ? "available" : "not available");
 
   if (!sdCardReady)
   {
@@ -644,6 +740,16 @@ bool sampleManagerInit()
     logSdDirectoryRecursive("/", 1);
     loadSampleGainPercent();
   }
+  //----
+  String storedSampleSet = settingsStoreGetActiveSampleSet();
+
+  if (storedSampleSet.length() == 2)
+  {
+    sampleManagerSetActiveSampleSet(storedSampleSet.c_str());
+  }
+
+  ESP_LOGI(logTag, "Active sample set: %s", activeSampleSet);
+  //----
 
   String sampleSetDir = getSampleSetDir();
 
@@ -657,8 +763,7 @@ bool sampleManagerInit()
     sampleSlots[sampleIndex].fromSd = false;
     sampleSlots[sampleIndex].storedInPsram = false;
 
-    strncpy(sampleSlots[sampleIndex].name,
-            sampleNames[sampleIndex],
+    strncpy(sampleSlots[sampleIndex].name, sampleNames[sampleIndex],
             sizeof(sampleSlots[sampleIndex].name) - 1);
     sampleSlots[sampleIndex].name[sizeof(sampleSlots[sampleIndex].name) - 1] = '\0';
 
@@ -666,24 +771,17 @@ bool sampleManagerInit()
     {
       String wavPath = sampleSetDir + sampleFileNames[sampleIndex];
 
-      ESP_LOGI(logTag,
-               "Loading sample %s from %s",
-               sampleNames[sampleIndex],
-               wavPath.c_str());
+      ESP_LOGI(logTag, "Loading sample %s from %s", sampleNames[sampleIndex], wavPath.c_str());
 
       if (loadSampleFromSdPath(sampleIndex, wavPath.c_str()))
       {
-        ESP_LOGI(logTag,
-                 "Loaded SD sample %s: %lu frames, %s",
-                 sampleNames[sampleIndex],
+        ESP_LOGI(logTag, "Loaded SD sample %s: %lu frames, %s", sampleNames[sampleIndex],
                  static_cast<unsigned long>(sampleSlots[sampleIndex].frameCount),
                  sampleSlots[sampleIndex].storedInPsram ? "PSRAM" : "RAM");
       }
       else
       {
-        ESP_LOGW(logTag,
-                 "Warning: Missing or invalid sample %s, using fallback",
-                 wavPath.c_str());
+        ESP_LOGW(logTag, "Warning: Missing or invalid sample %s, using fallback", wavPath.c_str());
       }
     }
   }

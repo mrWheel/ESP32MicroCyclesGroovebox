@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 13:46 ***/
+/*** Last Changed: 2026-05-30 - 12:24 ***/
 #ifndef AUDIO_ENGINE_H
 #define AUDIO_ENGINE_H
 
@@ -36,7 +36,8 @@ bool audioEngineInit();
 bool audioEngineIsOutputReady();
 
 //-- Trigger sample playback with full voice params.
-void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain = 65535, int8_t pan = 0, uint8_t chokeGroup = 0);
+void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain = 65535,
+                              int8_t pan = 0, uint8_t chokeGroup = 0);
 
 //-- Render one audio block and write to I2S.
 void audioEngineRenderBlock();

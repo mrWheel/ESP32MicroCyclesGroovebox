@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 17:33 ***/
+/*** Last Changed: 2026-05-30 - 12:24 ***/
 #ifndef SAMPLE_MANAGER_H
 #define SAMPLE_MANAGER_H
 
@@ -33,6 +33,10 @@ bool sampleManagerInit();
 
 //-- True when SD card is mounted and usable.
 bool sampleManagerIsSdCardReady();
+
+bool sampleManagerListSampleSets(char sampleSetNames[][4], uint8_t maxSampleSets,
+                                 uint8_t* sampleSetCount);
+bool sampleManagerLoadSampleSet(const char* sampleSetName);
 
 //-- Set the active sample set ("S1".."S9"). Returns true if successful.
 bool sampleManagerSetActiveSampleSet(const char* setName);

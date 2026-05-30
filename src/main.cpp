@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 17:33 ***/
+/*** Last Changed: 2026-05-30 - 12:24 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -19,7 +19,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.6.6";
+const char* PROG_VERSION = "v0.6.7";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -125,7 +125,8 @@ static String buildFilesystemChildPath(const char* parentPath, const char* entry
 } //   buildFilesystemChildPath()
 
 //-- Recursively log directory contents for a filesystem.
-static void logFilesystemDirectoryRecursive(fs::FS& filesystem, const char* filesystemName, const char* directoryPath, uint8_t depth)
+static void logFilesystemDirectoryRecursive(fs::FS& filesystem, const char* filesystemName,
+                                            const char* directoryPath, uint8_t depth)
 {
   File directory = filesystem.open(directoryPath, "r");
 
@@ -159,16 +160,13 @@ static void logFilesystemDirectoryRecursive(fs::FS& filesystem, const char* file
       indent += "  ";
     }
 
-    ESP_LOGI(logTag,
-             "%s%s (%s, %lu bytes)",
-             indent.c_str(),
-             entryPath.c_str(),
-             entry.isDirectory() ? "dir" : "file",
-             static_cast<unsigned long>(entry.size()));
+    ESP_LOGI(logTag, "%s%s (%s, %lu bytes)", indent.c_str(), entryPath.c_str(),
+             entry.isDirectory() ? "dir" : "file", static_cast<unsigned long>(entry.size()));
 
     if (entry.isDirectory())
     {
-      logFilesystemDirectoryRecursive(filesystem, filesystemName, entryPath.c_str(), static_cast<uint8_t>(depth + 1));
+      logFilesystemDirectoryRecursive(filesystem, filesystemName, entryPath.c_str(),
+                                      static_cast<uint8_t>(depth + 1));
     }
 
     entry.close();
@@ -238,12 +236,8 @@ static void runSdSmokeTestAndHalt()
 {
   static const uint32_t initFrequenciesHz[] = {400000U, 1000000U, 4000000U};
 
-  ESP_LOGI(logTag,
-           "SD smoke test pins: CS=%d SCK=%d MISO=%d MOSI=%d",
-           PIN_SD_CS,
-           PIN_SD_SCK,
-           PIN_SD_MISO,
-           PIN_SD_MOSI);
+  ESP_LOGI(logTag, "SD smoke test pins: CS=%d SCK=%d MISO=%d MOSI=%d", PIN_SD_CS, PIN_SD_SCK,
+           PIN_SD_MISO, PIN_SD_MOSI);
 
   pinMode(PIN_TFT_CS, OUTPUT);
   digitalWrite(PIN_TFT_CS, HIGH);
@@ -266,13 +260,12 @@ static void runSdSmokeTestAndHalt()
 
   bool mountOk = false;
 
-  for (size_t attemptIndex = 0; attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
+  for (size_t attemptIndex = 0;
+       attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
   {
     uint32_t initFrequency = initFrequenciesHz[attemptIndex];
 
-    ESP_LOGI(logTag,
-             "SD smoke init attempt %u at %luHz",
-             static_cast<unsigned>(attemptIndex + 1),
+    ESP_LOGI(logTag, "SD smoke init attempt %u at %luHz", static_cast<unsigned>(attemptIndex + 1),
              static_cast<unsigned long>(initFrequency));
 
     SD.end();
@@ -299,10 +292,8 @@ static void runSdSmokeTestAndHalt()
   uint8_t cardType = SD.cardType();
   uint64_t cardSizeMb = static_cast<uint64_t>(SD.cardSize()) / (1024ULL * 1024ULL);
 
-  ESP_LOGI(logTag,
-           "SD smoke test: mount OK, cardType=%u, cardSizeMB=%llu",
-           static_cast<unsigned>(cardType),
-           static_cast<unsigned long long>(cardSizeMb));
+  ESP_LOGI(logTag, "SD smoke test: mount OK, cardType=%u, cardSizeMB=%llu",
+           static_cast<unsigned>(cardType), static_cast<unsigned long long>(cardSizeMb));
 
   File rootDir = SD.open("/");
 
@@ -323,10 +314,7 @@ static void runSdSmokeTestAndHalt()
         break;
       }
 
-      ESP_LOGI(logTag,
-               "  %s (%s, %lu bytes)",
-               entry.name(),
-               entry.isDirectory() ? "dir" : "file",
+      ESP_LOGI(logTag, "  %s (%s, %lu bytes)", entry.name(), entry.isDirectory() ? "dir" : "file",
                static_cast<unsigned long>(entry.size()));
 
       entry.close();
@@ -335,7 +323,8 @@ static void runSdSmokeTestAndHalt()
 
   // Use active sample set directory for SD sample test
   const char* sampleSet = sampleManagerGetActiveSampleSet();
-  const char* sampleNames[] = {"kick.wav", "snare.wav", "ch.wav", "oh.wav", "tone.wav", "metal.wav"};
+  const char* sampleNames[] = {"kick.wav", "snare.wav", "ch.wav",
+                               "oh.wav",   "tone.wav",  "metal.wav"};
   String sampleSetDir = String("/samples/") + sampleSet + "/";
   for (size_t sampleIndex = 0; sampleIndex < 6; sampleIndex++)
   {
@@ -346,7 +335,8 @@ static void runSdSmokeTestAndHalt()
       ESP_LOGW(logTag, "SD smoke test: missing %s", samplePath.c_str());
       continue;
     }
-    ESP_LOGI(logTag, "SD smoke test: found %s (%lu bytes)", samplePath.c_str(), static_cast<unsigned long>(sampleFile.size()));
+    ESP_LOGI(logTag, "SD smoke test: found %s (%lu bytes)", samplePath.c_str(),
+             static_cast<unsigned long>(sampleFile.size()));
     sampleFile.close();
   }
 
@@ -363,12 +353,14 @@ static void runSdSmokeTestAndHalt()
 //-- Warn when critical pin assignments overlap.
 static void logPinConflictWarnings()
 {
-  if (PIN_I2S_WS == PIN_TFT_RST || PIN_I2S_WS == PIN_TFT_CS || PIN_I2S_WS == PIN_TFT_DC || PIN_I2S_WS == PIN_TFT_SCL || PIN_I2S_WS == PIN_TFT_SDA || PIN_I2S_WS == PIN_TFT_BL)
+  if (PIN_I2S_WS == PIN_TFT_RST || PIN_I2S_WS == PIN_TFT_CS || PIN_I2S_WS == PIN_TFT_DC ||
+      PIN_I2S_WS == PIN_TFT_SCL || PIN_I2S_WS == PIN_TFT_SDA || PIN_I2S_WS == PIN_TFT_BL)
   {
     ESP_LOGE(logTag, "Pin conflict: PIN_I2S_WS=%d overlaps TFT pin assignment", PIN_I2S_WS);
   }
 
-  if (PIN_I2S_DOUT == PIN_TFT_RST || PIN_I2S_DOUT == PIN_TFT_CS || PIN_I2S_DOUT == PIN_TFT_DC || PIN_I2S_DOUT == PIN_TFT_SCL || PIN_I2S_DOUT == PIN_TFT_SDA || PIN_I2S_DOUT == PIN_TFT_BL)
+  if (PIN_I2S_DOUT == PIN_TFT_RST || PIN_I2S_DOUT == PIN_TFT_CS || PIN_I2S_DOUT == PIN_TFT_DC ||
+      PIN_I2S_DOUT == PIN_TFT_SCL || PIN_I2S_DOUT == PIN_TFT_SDA || PIN_I2S_DOUT == PIN_TFT_BL)
   {
     ESP_LOGE(logTag, "Pin conflict: PIN_I2S_DOUT=%d overlaps TFT pin assignment", PIN_I2S_DOUT);
   }
@@ -514,7 +506,8 @@ void setup()
 
   Serial.printf("Booting ESP32 MicroCycles Groovebox (%s)\n", PROG_VERSION);
   ESP_LOGI(logTag, "Booting ESP32 MicroCycles Groovebox (%s)", PROG_VERSION);
-  ESP_LOGI(logTag, "TFT pins: CS=%d DC=%d RST=%d BL=%d SCL=%d SDA=%d", PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST, PIN_TFT_BL, PIN_TFT_SCL, PIN_TFT_SDA);
+  ESP_LOGI(logTag, "TFT pins: CS=%d DC=%d RST=%d BL=%d SCL=%d SDA=%d", PIN_TFT_CS, PIN_TFT_DC,
+           PIN_TFT_RST, PIN_TFT_BL, PIN_TFT_SCL, PIN_TFT_SDA);
   ESP_LOGI(logTag, "I2S pins: BCLK=%d WS=%d DOUT=%d", PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT);
   logPinConflictWarnings();
 
@@ -524,10 +517,12 @@ void setup()
 #endif
 
 #ifdef NO_DAC_HARDWARE
-  ESP_LOGW(logTag, "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");
+  ESP_LOGW(logTag,
+           "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");
 #endif
 
-  inputQueue = xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
+  inputQueue =
+      xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
 
   if (!sampleManagerInit())
   {
@@ -581,10 +576,8 @@ void setup()
   displaySetRotation(static_cast<int>(runtimeSettings.displayRotation));
   displaySetThemeColorIndex(runtimeSettings.themeColorIndex);
   input.setEncoderDirectionReversed(runtimeSettings.encoderDirectionReversed);
-  ESP_LOGI(logTag,
-           "Loaded settings: rotation=%u theme=%d encoder=%s",
-           static_cast<unsigned>(runtimeSettings.displayRotation),
-           runtimeSettings.themeColorIndex,
+  ESP_LOGI(logTag, "Loaded settings: rotation=%u theme=%d encoder=%s",
+           static_cast<unsigned>(runtimeSettings.displayRotation), runtimeSettings.themeColorIndex,
            runtimeSettings.encoderDirectionReversed ? "B-A" : "A-B");
 
   bootStatusPush("Init LittleFS patterns");
@@ -593,7 +586,8 @@ void setup()
     ESP_LOGW(logTag, "Pattern storage init failed");
     bootStatusPush("LittleFS init failed");
   }
-  else if (!settingsStoreListPatterns(patternNames, sizeof(patternNames) / sizeof(patternNames[0]), patternCount))
+  else if (!settingsStoreListPatterns(patternNames, sizeof(patternNames) / sizeof(patternNames[0]),
+                                      patternCount))
   {
     bootStatusPush("LittleFS list failed");
   }
@@ -643,10 +637,14 @@ void setup()
   //-- Draw first full UI frame directly from setup.
   uiManagerUpdate();
 
-  audioTaskStarted = (xTaskCreatePinnedToCore(audioTask, "AudioTask", 8192, nullptr, 3, nullptr, 0) == pdPASS);
-  uiTaskStarted = (xTaskCreatePinnedToCore(uiTask, "UiTask", 6144, nullptr, 2, nullptr, 1) == pdPASS);
-  inputTaskStarted = (xTaskCreatePinnedToCore(inputTask, "InputTask", 4096, nullptr, 2, nullptr, 1) == pdPASS);
-  systemTaskStarted = (xTaskCreatePinnedToCore(systemTask, "SystemTask", 6144, nullptr, 1, nullptr, 1) == pdPASS);
+  audioTaskStarted =
+      (xTaskCreatePinnedToCore(audioTask, "AudioTask", 8192, nullptr, 3, nullptr, 0) == pdPASS);
+  uiTaskStarted =
+      (xTaskCreatePinnedToCore(uiTask, "UiTask", 6144, nullptr, 2, nullptr, 1) == pdPASS);
+  inputTaskStarted =
+      (xTaskCreatePinnedToCore(inputTask, "InputTask", 4096, nullptr, 2, nullptr, 1) == pdPASS);
+  systemTaskStarted =
+      (xTaskCreatePinnedToCore(systemTask, "SystemTask", 6144, nullptr, 1, nullptr, 1) == pdPASS);
 
   if (!audioTaskStarted)
   {
