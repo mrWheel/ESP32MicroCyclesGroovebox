@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 14:54 ***/
+/*** Last Changed: 2026-05-30 - 12:41 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 #ifndef SETTINGS_STORE_H
 #define SETTINGS_STORE_H
@@ -66,8 +66,12 @@ bool settingsStoreInitPatternStorage();
 //-- List available pattern names without extension.
 bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& outCount);
 
+//-- Find highest existing Local pNN pattern and return zero-based sequencer index.
+bool settingsStoreFindHighestLocalPatternIndex(uint8_t& outPatternIndex);
+
 //-- List available pattern names for one series letter (A..Z), sorted numerically.
-bool settingsStoreListPatternsForSeries(char patternLetter, String patternNames[], size_t maxCount, size_t& outCount);
+bool settingsStoreListPatternsForSeries(char patternLetter, String patternNames[], size_t maxCount,
+                                        size_t& outCount);
 
 //-- Find next available default pattern name.
 bool settingsStoreFindNextPatternName(String& outName);
@@ -85,7 +89,8 @@ bool settingsStoreCountAvailablePatternSlotsForLetter(char patternLetter, int& o
 bool settingsStoreCountAvailablePatternSlotsForLetterOnCard(char patternLetter, int& outFreeCount);
 
 //-- Return LittleFS usage values in bytes.
-bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t& outFreeBytes);
+bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes,
+                                   size_t& outFreeBytes);
 
 //-- Return SD usage values in bytes.
 bool settingsStoreGetSdUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t& outFreeBytes);
@@ -94,25 +99,31 @@ bool settingsStoreGetSdUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t
 bool settingsStoreSavePattern(const String& patternName, const PatternData& patternData);
 
 //-- Save pattern payload to SD card (with group).
-bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName, const PatternData& patternData);
+bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName,
+                                    const PatternData& patternData);
 
 //-- List available pattern names in a group on SD card.
-bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[], size_t maxCount, size_t& outCount);
+bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[],
+                                            size_t maxCount, size_t& outCount);
 
 //-- Load pattern payload from SD card (with group).
-bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName, PatternData& patternData);
+bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName,
+                                      PatternData& patternData);
 
 //-- Load pattern payload from LittleFS.
 bool settingsStoreLoadPattern(const String& patternName, PatternData& patternData);
 
 //-- Load chain settings from one existing pattern JSON file.
-bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outEnabled, uint8_t& outLength, String& outTarget);
+bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outEnabled,
+                                           uint8_t& outLength, String& outTarget);
 
 //-- Load chain settings from one existing SD card pattern JSON file.
-bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled, uint8_t& outLength, String& outTarget);
+bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled,
+                                                   uint8_t& outLength, String& outTarget);
 
 //-- Update only chain settings in one existing pattern JSON file.
-bool settingsStoreSavePatternChainSettings(const String& patternName, bool chainEnabled, uint8_t chainLength, const String& chainTarget);
+bool settingsStoreSavePatternChainSettings(const String& patternName, bool chainEnabled,
+                                           uint8_t chainLength, const String& chainTarget);
 
 //-- Delete one pattern file.
 bool settingsStoreDeletePattern(const String& patternName);

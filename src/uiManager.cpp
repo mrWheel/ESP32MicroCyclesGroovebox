@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-30 - 12:24 ***/
+/*** Last Changed: 2026-05-30 - 12:41 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -1372,7 +1372,7 @@ static void drawConfirmationScreen(const char* title, int selection)
 
 } //   drawConfirmationScreen()
 
-//-- Stop playback before storage-related UI actions.
+//-- Stop playback immediately before storage-related UI actions.
 static void stopPlaybackForStorageAction()
 {
   SequencerView view;
@@ -1381,10 +1381,33 @@ static void stopPlaybackForStorageAction()
 
   if (view.playing)
   {
-    sequencerTogglePlay();
+    sequencerStopImmediately();
   }
 
 } //   stopPlaybackForStorageAction()
+
+//-- Start immediately or request musical deferred stop from the Groovebox screen.
+static void handleGrooveboxTransportButton()
+{
+  SequencerView view;
+  uint8_t finalPatternIndex = 0;
+
+  sequencerGetView(view);
+
+  if (!view.playing)
+  {
+    sequencerTogglePlay();
+    return;
+  }
+
+  if (!settingsStoreFindHighestLocalPatternIndex(finalPatternIndex))
+  {
+    finalPatternIndex = view.activePatternIndex;
+  }
+
+  sequencerRequestStopAfterFinalPattern(finalPatternIndex);
+
+} //   handleGrooveboxTransportButton()
 
 //-- Refresh sample set list from SD card.
 static void refreshSampleSetList()
@@ -2503,7 +2526,6 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
 
   if (uiState.menuOpen)
   {
-
     if (buttonEvent == BUTTON_EVENT_SHORT_PRESS)
     {
       if (uiState.sampleSetListOpen)
@@ -2527,11 +2549,12 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
       }
       else if (uiState.wifiManagerWaitingForCredentials)
       {
-        // Stay on waiting screen until credentials are entered or portal closes.
+        //-- Stay on waiting screen until credentials are entered or portal closes.
       }
       else
       {
         flushPendingChainSettings();
+
         uiState.menuOpen = false;
         uiState.tempoEditOpen = false;
         uiState.editPopupOpen = false;
@@ -2539,6 +2562,7 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
         uiState.editPopupChainFocus = chainPopupFocusEnable;
         uiState.tempoEditSelection = 0;
       }
+
       uiState.dirty = true;
     }
 
@@ -2564,6 +2588,7 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
         buttonEvent == BUTTON_EVENT_LONG_PRESS)
     {
       flushPendingChainSettings();
+
       uiState.editPopupOpen = false;
       uiState.editPopupValueEdit = false;
       uiState.editPopupChainFocus = chainPopupFocusEnable;
@@ -2576,12 +2601,15 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
   if (buttonEvent == BUTTON_EVENT_SHORT_PRESS)
   {
     SequencerView view;
+
     sequencerGetView(view);
 
     if (view.editMode)
     {
       flushPendingChainSettings();
+
       sequencerToggleEditMode();
+
       uiState.parameterPageIndex = parameterPageTrig;
       uiState.editPopupOpen = false;
       uiState.editPopupValueEdit = false;
@@ -2589,7 +2617,7 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
     }
     else
     {
-      sequencerTogglePlay();
+      handleGrooveboxTransportButton();
     }
   }
   else if (buttonEvent == BUTTON_EVENT_MEDIUM_PRESS)

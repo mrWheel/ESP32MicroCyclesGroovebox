@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 18:42 ***/
+/*** Last Changed: 2026-05-30 - 12:41 ***/
 #include "sequencer.h"
 
 #include <Arduino.h>
@@ -7,20 +7,36 @@
 //-- Shared lock between AudioTask and UI/System tasks.
 static portMUX_TYPE sequencerMux = portMUX_INITIALIZER_UNLOCKED;
 
+//-- Transport state for musical deferred stop behavior.
+enum TransportState : uint8_t
+{
+  transportStopped = 0,
+  transportRunning,
+  transportStopRequested,
+  transportPlayingFinalPattern
+};
+
 //-- Full sequencer state.
 struct SequencerState
 {
   Pattern patterns[sequencerPatternCount];
+
   uint16_t bpm;
+
   uint8_t swingPercent;
   uint8_t currentStep;
   uint8_t cursorStep;
   uint8_t selectedTrack;
   uint8_t activePatternIndex;
   uint8_t chainLength;
+  uint8_t finalStopPatternIndex;
+
   bool playing;
   bool editMode;
   bool chainEnabled;
+
+  TransportState transportState;
+
   uint64_t nextStepDueUs;
 };
 
@@ -97,7 +113,8 @@ static void loadDefaultPattern(Pattern& pattern)
 static uint32_t getStepIntervalUs(uint16_t bpm, uint8_t swingPercent, uint8_t stepIndex)
 {
   uint32_t baseIntervalUs = 60000000UL / (static_cast<uint32_t>(bpm) * 4UL);
-  int32_t swingOffsetUs = (static_cast<int32_t>(baseIntervalUs) * static_cast<int32_t>(swingPercent)) / 100;
+  int32_t swingOffsetUs =
+      (static_cast<int32_t>(baseIntervalUs) * static_cast<int32_t>(swingPercent)) / 100;
 
   if ((stepIndex & 1U) == 0)
   {
@@ -127,9 +144,11 @@ void sequencerInit()
   state.selectedTrack = 0;
   state.activePatternIndex = 0;
   state.chainLength = 1;
+  state.finalStopPatternIndex = 0;
   state.playing = false;
   state.editMode = false;
   state.chainEnabled = false;
+  state.transportState = transportStopped;
   state.nextStepDueUs = 0;
 
   for (uint8_t patternIndex = 0; patternIndex < sequencerPatternCount; patternIndex++)
@@ -142,9 +161,11 @@ void sequencerInit()
 } //   sequencerInit()
 
 //-- Advance timing from AudioTask clock and return track trigger bitmask with per-track levels.
-bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& outTrackMask, uint8_t outTrackLevels[sequencerTrackCount])
+bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& outTrackMask,
+                             uint8_t outTrackLevels[sequencerTrackCount])
 {
   bool stepDue = false;
+
   outTrackMask = 0;
   outStepIndex = 0;
 
@@ -188,7 +209,9 @@ bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& out
 
             if (step.lockEnabled)
             {
-              uint32_t scaledLevel = (static_cast<uint32_t>(step.velocity) * static_cast<uint32_t>(step.lockDecay)) / 100U;
+              uint32_t scaledLevel =
+                  (static_cast<uint32_t>(step.velocity) * static_cast<uint32_t>(step.lockDecay)) /
+                  100U;
 
               if (scaledLevel > 255U)
               {
@@ -205,12 +228,38 @@ bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& out
       }
 
       uint32_t intervalUs = getStepIntervalUs(state.bpm, state.swingPercent, state.currentStep);
+
       state.nextStepDueUs += intervalUs;
       state.currentStep = static_cast<uint8_t>((state.currentStep + 1U) % sequencerStepCount);
 
-      if (state.currentStep == 0 && state.chainEnabled && state.chainLength > 1U)
+      if (state.currentStep == 0)
       {
-        state.activePatternIndex = static_cast<uint8_t>((state.activePatternIndex + 1U) % state.chainLength);
+        if (state.transportState == transportStopRequested)
+        {
+          if (state.activePatternIndex == state.finalStopPatternIndex)
+          {
+            state.playing = false;
+            state.transportState = transportStopped;
+            state.nextStepDueUs = 0;
+          }
+          else
+          {
+            state.activePatternIndex = state.finalStopPatternIndex;
+            state.transportState = transportPlayingFinalPattern;
+            state.nextStepDueUs = 0;
+          }
+        }
+        else if (state.transportState == transportPlayingFinalPattern)
+        {
+          state.playing = false;
+          state.transportState = transportStopped;
+          state.nextStepDueUs = 0;
+        }
+        else if (state.chainEnabled && state.chainLength > 1U)
+        {
+          state.activePatternIndex =
+              static_cast<uint8_t>((state.activePatternIndex + 1U) % state.chainLength);
+        }
       }
     }
   }
@@ -226,16 +275,67 @@ void sequencerTogglePlay()
 {
   portENTER_CRITICAL(&sequencerMux);
 
-  state.playing = !state.playing;
-
-  if (state.playing)
+  if (!state.playing)
   {
+    state.playing = true;
+    state.transportState = transportRunning;
+    state.activePatternIndex = 0;
+    state.currentStep = 0;
+    state.nextStepDueUs = 0;
+  }
+  else
+  {
+    state.playing = false;
+    state.transportState = transportStopped;
+    state.currentStep = 0;
     state.nextStepDueUs = 0;
   }
 
   portEXIT_CRITICAL(&sequencerMux);
 
 } //   sequencerTogglePlay()
+
+//-- Stop immediately without waiting for musical pattern boundaries.
+void sequencerStopImmediately()
+{
+  portENTER_CRITICAL(&sequencerMux);
+
+  state.playing = false;
+  state.transportState = transportStopped;
+  state.currentStep = 0;
+  state.nextStepDueUs = 0;
+
+  portEXIT_CRITICAL(&sequencerMux);
+
+} //   sequencerStopImmediately()
+
+//-- Request musical stop: finish current pattern, play final pattern, then stop.
+void sequencerRequestStopAfterFinalPattern(uint8_t finalPatternIndex)
+{
+  portENTER_CRITICAL(&sequencerMux);
+
+  if (finalPatternIndex >= sequencerPatternCount)
+  {
+    finalPatternIndex = static_cast<uint8_t>(sequencerPatternCount - 1U);
+  }
+
+  if (!state.playing)
+  {
+    state.activePatternIndex = 0;
+    state.currentStep = 0;
+    state.nextStepDueUs = 0;
+    state.playing = true;
+    state.transportState = transportRunning;
+  }
+  else
+  {
+    state.finalStopPatternIndex = finalPatternIndex;
+    state.transportState = transportStopRequested;
+  }
+
+  portEXIT_CRITICAL(&sequencerMux);
+
+} //   sequencerRequestStopAfterFinalPattern()
 
 //-- Toggle edit mode state.
 void sequencerToggleEditMode()
@@ -372,7 +472,8 @@ void sequencerAdjustCurrentStepProbability(int delta)
   portENTER_CRITICAL(&sequencerMux);
 
   Step& selectedStep = getSelectedStep();
-  selectedStep.probability = clampToByte(static_cast<int32_t>(selectedStep.probability) + delta, 0, 100);
+  selectedStep.probability =
+      clampToByte(static_cast<int32_t>(selectedStep.probability) + delta, 0, 100);
 
   portEXIT_CRITICAL(&sequencerMux);
 
@@ -411,7 +512,8 @@ void sequencerAdjustCurrentStepLockDecay(int delta)
   portENTER_CRITICAL(&sequencerMux);
 
   Step& selectedStep = getSelectedStep();
-  selectedStep.lockDecay = clampToByte(static_cast<int32_t>(selectedStep.lockDecay) + delta, 10, 200);
+  selectedStep.lockDecay =
+      clampToByte(static_cast<int32_t>(selectedStep.lockDecay) + delta, 10, 200);
   selectedStep.lockEnabled = true;
 
   portEXIT_CRITICAL(&sequencerMux);
@@ -494,7 +596,8 @@ void sequencerAdjustChainLength(int delta)
 {
   portENTER_CRITICAL(&sequencerMux);
 
-  state.chainLength = clampToByte(static_cast<int32_t>(state.chainLength) + delta, 1, sequencerPatternCount);
+  state.chainLength =
+      clampToByte(static_cast<int32_t>(state.chainLength) + delta, 1, sequencerPatternCount);
 
   if (state.activePatternIndex >= state.chainLength)
   {
@@ -581,7 +684,8 @@ void sequencerImportPattern(const PatternData& patternData)
   state.bpm = patternData.bpm;
   state.swingPercent = patternData.swingPercent;
   state.chainEnabled = patternData.chainEnabled;
-  state.chainLength = clampToByte(static_cast<int32_t>(patternData.chainLength), 1, sequencerPatternCount);
+  state.chainLength =
+      clampToByte(static_cast<int32_t>(patternData.chainLength), 1, sequencerPatternCount);
 
   if (state.chainLength <= 1U)
   {

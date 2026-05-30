@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 18:42 ***/
+/*** Last Changed: 2026-05-30 - 12:41 ***/
 #ifndef SEQUENCER_H
 #define SEQUENCER_H
 
@@ -62,10 +62,13 @@ struct PatternData
 void sequencerInit();
 
 //-- Advance timing from AudioTask clock and return step, trigger mask, and per-track levels.
-bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& outTrackMask, uint8_t outTrackLevels[sequencerTrackCount]);
+bool sequencerConsumeDueStep(uint64_t nowUs, uint8_t& outStepIndex, uint8_t& outTrackMask,
+                             uint8_t outTrackLevels[sequencerTrackCount]);
 
 //-- Handle transport and edit controls.
 void sequencerTogglePlay();
+void sequencerStopImmediately();
+void sequencerRequestStopAfterFinalPattern(uint8_t finalPatternIndex);
 void sequencerToggleEditMode();
 void sequencerMoveCursor(int delta);
 void sequencerMoveTrack(int delta);

@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-29 - 14:54 ***/
+/*** Last Changed: 2026-05-30 - 12:41 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 
 #include "settingsStore.h"
@@ -188,11 +188,14 @@ static const char* logTag = "SettingsStore";
 //-- Settings and pattern paths.
 static const char* settingsPath = "/settings.json";
 static const char* patternDirectoryPath = "/patterns";
-static const char* patternFileExtension = ""; // No extension for user-facing, but keep for compatibility if needed
+static const char* patternFileExtension =
+    ""; // No extension for user-facing, but keep for compatibility if needed
 static const char* patternTempFileSuffix = ".tmp";
 static const size_t patternSaveReserveBytes = 512;
-static const char* trackJsonNames[sequencerTrackCount] = {"KICK", "SNARE", "CH", "OH", "TONE", "METAL"};
-static const char* trackSampleNames[sequencerTrackCount] = {"kick", "snare", "ch", "oh", "tone", "metal"};
+static const char* trackJsonNames[sequencerTrackCount] = {"KICK", "SNARE", "CH",
+                                                          "OH",   "TONE",  "METAL"};
+static const char* trackSampleNames[sequencerTrackCount] = {"kick", "snare", "ch",
+                                                            "oh",   "tone",  "metal"};
 
 //-- SD card pattern directory.
 static const char* sdPatternDirectoryPath = "/patterns";
@@ -219,19 +222,23 @@ static bool patternPathExists(const String& fullPath);
 static bool sdPatternPathExists(const String& fullPath);
 
 //-- Build one pattern JSON document without changing schema.
-static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData, JsonDocument& jsonDocument);
+static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData,
+                                     JsonDocument& jsonDocument);
 
 //-- Parse one pattern JSON document into runtime payload.
-static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternData& patternData, const String& sourcePath);
+static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternData& patternData,
+                                     const String& sourcePath);
 
 //-- Normalize strict pattern token to uppercase <LETTER><DIGIT><DIGIT>.
 static String normalizeStrictPatternToken(const String& patternName);
 
 //-- Read chain settings from JSON document with backward-compatible keys.
-static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled, uint8_t& outLength, String& outTarget);
+static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled,
+                                      uint8_t& outLength, String& outTarget);
 
 //-- Write chain settings into JSON document while preserving unrelated fields.
-static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length, const String& target);
+static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length,
+                                     const String& target);
 
 //-- Build safe pattern base name.
 static String normalizePatternName(const String& patternName)
@@ -241,11 +248,9 @@ static String normalizePatternName(const String& patternName)
   for (size_t charIndex = 0; charIndex < patternName.length(); charIndex++)
   {
     char currentChar = patternName[charIndex];
-    bool allowedChar = ((currentChar >= 'a' && currentChar <= 'z') ||
-                        (currentChar >= 'A' && currentChar <= 'Z') ||
-                        (currentChar >= '0' && currentChar <= '9') ||
-                        currentChar == '_' ||
-                        currentChar == '-');
+    bool allowedChar =
+        ((currentChar >= 'a' && currentChar <= 'z') || (currentChar >= 'A' && currentChar <= 'Z') ||
+         (currentChar >= '0' && currentChar <= '9') || currentChar == '_' || currentChar == '-');
 
     if (allowedChar)
     {
@@ -324,7 +329,8 @@ static String buildPatternPath(const String& patternName)
 {
   // Enforce pNN naming (p01..p99)
   String normalizedName = patternName;
-  if (normalizedName.length() == 3 && normalizedName[0] == 'p' && isDigit(normalizedName[1]) && isDigit(normalizedName[2]))
+  if (normalizedName.length() == 3 && normalizedName[0] == 'p' && isDigit(normalizedName[1]) &&
+      isDigit(normalizedName[2]))
   {
     // OK
   }
@@ -505,11 +511,14 @@ static bool patternPathExists(const String& fullPath)
   {
     String entryPath = String(entry.name());
     int entrySlashIndex = entryPath.lastIndexOf('/');
-    String entryFileName = (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
+    String entryFileName =
+        (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
 
     entry.close();
 
-    if (entryPath == fullPath || entryPath == (String(patternDirectoryPath) + "/" + fileNameToFind) || entryFileName == fileNameToFind)
+    if (entryPath == fullPath ||
+        entryPath == (String(patternDirectoryPath) + "/" + fileNameToFind) ||
+        entryFileName == fileNameToFind)
     {
       directory.close();
       return true;
@@ -547,11 +556,14 @@ static bool sdPatternPathExists(const String& fullPath)
   {
     String entryPath = String(entry.name());
     int entrySlashIndex = entryPath.lastIndexOf('/');
-    String entryFileName = (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
+    String entryFileName =
+        (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
 
     entry.close();
 
-    if (entryPath == fullPath || entryPath == (String(sdPatternDirectoryPath) + "/" + fileNameToFind) || entryFileName == fileNameToFind)
+    if (entryPath == fullPath ||
+        entryPath == (String(sdPatternDirectoryPath) + "/" + fileNameToFind) ||
+        entryFileName == fileNameToFind)
     {
       directory.close();
       return true;
@@ -566,7 +578,8 @@ static bool sdPatternPathExists(const String& fullPath)
 } //   sdPatternPathExists()
 
 //-- Build one pattern JSON document without changing schema.
-static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData, JsonDocument& jsonDocument)
+static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData,
+                                     JsonDocument& jsonDocument)
 {
   JsonArray tracks = jsonDocument["tracks"].to<JsonArray>();
 
@@ -610,7 +623,8 @@ static void buildPatternJsonDocument(const String& normalizedName, const Pattern
 } //   buildPatternJsonDocument()
 
 //-- Parse one pattern JSON document into runtime payload.
-static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternData& patternData, const String& sourcePath)
+static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternData& patternData,
+                                     const String& sourcePath)
 {
   JsonArrayConst tracks;
 
@@ -725,7 +739,8 @@ static String normalizeStrictPatternToken(const String& patternName)
 } //   normalizeStrictPatternToken()
 
 //-- Read chain settings from JSON document with backward-compatible keys.
-static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled, uint8_t& outLength, String& outTarget)
+static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled,
+                                      uint8_t& outLength, String& outTarget)
 {
   JsonObjectConst chainObject = jsonDocument["chain"].as<JsonObjectConst>();
   bool chainEnabled = false;
@@ -761,7 +776,8 @@ static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& ou
 } //   readChainSettingsFromJson()
 
 //-- Write chain settings into JSON document while preserving unrelated fields.
-static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length, const String& target)
+static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length,
+                                     const String& target)
 {
   JsonObject chainObject = jsonDocument["chain"].to<JsonObject>();
 
@@ -776,7 +792,8 @@ static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, u
 } //   writeChainSettingsToJson()
 
 //-- Return LittleFS usage values in bytes.
-bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t& outFreeBytes)
+bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes,
+                                   size_t& outFreeBytes)
 {
   if (!ensurePatternDirectory())
   {
@@ -865,10 +882,14 @@ void settingsStoreLoadRuntimeSettings(RuntimeSettings& settings)
     return;
   }
 
-  settings.displayRotation = static_cast<uint8_t>(jsonDocument["displayRotation"] | defaults.displayRotation);
-  settings.themeColorIndex = static_cast<int>(jsonDocument["themeColorIndex"] | defaults.themeColorIndex);
-  settings.encoderDirectionReversed = static_cast<bool>(jsonDocument["encoderDirectionReversed"] | defaults.encoderDirectionReversed);
-  settings.activePatternName = static_cast<const char*>(jsonDocument["activePatternName"] | defaults.activePatternName.c_str());
+  settings.displayRotation =
+      static_cast<uint8_t>(jsonDocument["displayRotation"] | defaults.displayRotation);
+  settings.themeColorIndex =
+      static_cast<int>(jsonDocument["themeColorIndex"] | defaults.themeColorIndex);
+  settings.encoderDirectionReversed = static_cast<bool>(jsonDocument["encoderDirectionReversed"] |
+                                                        defaults.encoderDirectionReversed);
+  settings.activePatternName = static_cast<const char*>(jsonDocument["activePatternName"] |
+                                                        defaults.activePatternName.c_str());
 
 } //   settingsStoreLoadRuntimeSettings()
 
@@ -939,7 +960,8 @@ bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& o
     if (!entry.isDirectory())
     {
       String patternName = patternNameFromPath(entry.name());
-      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) && isDigit(patternName[2]) && patternName != "p00")
+      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) &&
+          isDigit(patternName[2]) && patternName != "p00")
       {
         patternNames[outCount] = patternName;
         outCount++;
@@ -967,8 +989,66 @@ bool settingsStoreListPatterns(String patternNames[], size_t maxCount, size_t& o
   return true;
 } //   settingsStoreListPatterns()
 
+//-- Find highest existing Local pNN pattern and return zero-based sequencer index.
+bool settingsStoreFindHighestLocalPatternIndex(uint8_t& outPatternIndex)
+{
+  String patternNames[patternStoreMaxEntries];
+  size_t patternCount = 0;
+  int highestPatternNumber = 0;
+
+  outPatternIndex = 0;
+
+  if (!settingsStoreListPatterns(patternNames, patternStoreMaxEntries, patternCount))
+  {
+    return false;
+  }
+
+  for (size_t patternIndex = 0; patternIndex < patternCount; patternIndex++)
+  {
+    const String& patternName = patternNames[patternIndex];
+
+    if (patternName.length() != 3 || patternName[0] != 'p')
+    {
+      continue;
+    }
+
+    if (!isDigit(patternName[1]) || !isDigit(patternName[2]))
+    {
+      continue;
+    }
+
+    int patternNumber = patternName.substring(1).toInt();
+
+    if (patternNumber < 1)
+    {
+      continue;
+    }
+
+    if (patternNumber > static_cast<int>(sequencerPatternCount))
+    {
+      continue;
+    }
+
+    if (patternNumber > highestPatternNumber)
+    {
+      highestPatternNumber = patternNumber;
+    }
+  }
+
+  if (highestPatternNumber < 1)
+  {
+    return false;
+  }
+
+  outPatternIndex = static_cast<uint8_t>(highestPatternNumber - 1);
+
+  return true;
+
+} //   settingsStoreFindHighestLocalPatternIndex()
+
 //-- List available pattern names for one series letter (A..Z), sorted numerically.
-bool settingsStoreListPatternsForSeries(char patternLetter, String patternNames[], size_t maxCount, size_t& outCount)
+bool settingsStoreListPatternsForSeries(char patternLetter, String patternNames[], size_t maxCount,
+                                        size_t& outCount)
 {
   String listedPatternNames[patternStoreMaxEntries];
   size_t listedCount = 0;
@@ -1008,8 +1088,10 @@ bool settingsStoreListPatternsForSeries(char patternLetter, String patternNames[
   {
     for (size_t rightIndex = leftIndex + 1; rightIndex < outCount; rightIndex++)
     {
-      uint8_t leftNumber = static_cast<uint8_t>(((patternNames[leftIndex][1] - '0') * 10) + (patternNames[leftIndex][2] - '0'));
-      uint8_t rightNumber = static_cast<uint8_t>(((patternNames[rightIndex][1] - '0') * 10) + (patternNames[rightIndex][2] - '0'));
+      uint8_t leftNumber = static_cast<uint8_t>(((patternNames[leftIndex][1] - '0') * 10) +
+                                                (patternNames[leftIndex][2] - '0'));
+      uint8_t rightNumber = static_cast<uint8_t>(((patternNames[rightIndex][1] - '0') * 10) +
+                                                 (patternNames[rightIndex][2] - '0'));
 
       if (rightNumber < leftNumber)
       {
@@ -1302,9 +1384,7 @@ bool settingsStoreSavePattern(const String& patternName, const PatternData& patt
 
   if (!hasEnoughSpaceForPatternSave(payloadBytes))
   {
-    ESP_LOGW(logTag,
-             "Insufficient LittleFS space for %s (payload=%u bytes)",
-             patternPath.c_str(),
+    ESP_LOGW(logTag, "Insufficient LittleFS space for %s (payload=%u bytes)", patternPath.c_str(),
              static_cast<unsigned>(payloadBytes));
     return false;
   }
@@ -1370,7 +1450,8 @@ bool settingsStoreSavePattern(const String& patternName, const PatternData& patt
 
 //-- Save pattern payload to one JSON file on SD card.
 //-- Save pattern payload to one JSON file on SD card in /patterns/<GroupName>/pNN
-bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName, const PatternData& patternData)
+bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName,
+                                    const PatternData& patternData)
 {
   // groupName: validated pattern group name (max 8 chars, A-Z/0-9)
   // patternName: pNN
@@ -1478,7 +1559,8 @@ bool settingsStoreListPatternGroupsOnCard(String groupNames[], size_t maxCount, 
 } //   settingsStoreListPatternGroupsOnCard()
 
 //-- List available pattern names in a group on SD card: /patterns/<GroupName>/pNN
-bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[], size_t maxCount, size_t& outCount)
+bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patternNames[],
+                                            size_t maxCount, size_t& outCount)
 {
   outCount = 0;
   if (patternNames == nullptr || maxCount == 0)
@@ -1502,7 +1584,8 @@ bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patt
     if (!entry.isDirectory())
     {
       String patternName = patternNameFromPath(entry.name());
-      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) && isDigit(patternName[2]) && patternName != "p00")
+      if (patternName.length() == 3 && patternName[0] == 'p' && isDigit(patternName[1]) &&
+          isDigit(patternName[2]) && patternName != "p00")
       {
         patternNames[outCount] = patternName;
         outCount++;
@@ -1531,10 +1614,12 @@ bool settingsStoreListPatternsInGroupOnCard(const String& groupName, String patt
 } //   settingsStoreListPatternsInGroupOnCard()
 
 //-- Load pattern payload from SD card (with group).
-bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName, PatternData& patternData)
+bool settingsStoreLoadPatternFromCard(const String& groupName, const String& patternName,
+                                      PatternData& patternData)
 {
   String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName + patternFileExtension;
+  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName +
+                       patternFileExtension;
 
   if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
   {
@@ -1619,7 +1704,8 @@ bool settingsStoreLoadPattern(const String& patternName, PatternData& patternDat
 } //   settingsStoreLoadPattern()
 
 //-- Load chain settings from one existing pattern JSON file.
-bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outEnabled, uint8_t& outLength, String& outTarget)
+bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outEnabled,
+                                           uint8_t& outLength, String& outTarget)
 {
   String normalizedName;
   String patternPath;
@@ -1657,7 +1743,8 @@ bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outE
 } //   settingsStoreLoadPatternChainSettings()
 
 //-- Load chain settings from one existing SD card pattern JSON file.
-bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled, uint8_t& outLength, String& outTarget)
+bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled,
+                                                   uint8_t& outLength, String& outTarget)
 {
   String normalizedName;
   String patternPath;
@@ -1702,7 +1789,8 @@ bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bo
 } //   settingsStoreLoadPatternChainSettingsFromCard()
 
 //-- Update only chain settings in one existing pattern JSON file.
-bool settingsStoreSavePatternChainSettings(const String& patternName, bool chainEnabled, uint8_t chainLength, const String& chainTarget)
+bool settingsStoreSavePatternChainSettings(const String& patternName, bool chainEnabled,
+                                           uint8_t chainLength, const String& chainTarget)
 {
   String normalizedName;
   String normalizedTarget;
@@ -1807,7 +1895,8 @@ bool settingsStoreDeletePattern(const String& patternName)
 bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName)
 {
   String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName + patternFileExtension;
+  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName +
+                       patternFileExtension;
 
   if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
   {
