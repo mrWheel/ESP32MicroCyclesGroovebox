@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-31 - 11:29 ***/
+/*** Last Changed: 2026-05-31 - 12:29 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -122,6 +122,7 @@ struct UiState
   int patternGroupNameInputCursor;
   int patternGroupNameInputTokenIndex;
   char patternGroupNameInputValue[9];
+  bool patternGroupNameInputDrawn;
 };
 
 //-- Runtime state.
@@ -203,6 +204,44 @@ static String formatBytesAdaptive(size_t bytes)
   return String(buffer);
 
 } //   formatBytesAdaptive()
+
+//-- Return pattern name for a loaded pattern slot.
+static String getPatternNameForSlot(uint8_t slotIndex)
+{
+  char fallbackName[8];
+
+  if (slotIndex < sequencerPatternCount && !uiState.chainSlotPatternNames[slotIndex].isEmpty())
+  {
+    return uiState.chainSlotPatternNames[slotIndex];
+  }
+
+  snprintf(fallbackName, sizeof(fallbackName), "p%02u", static_cast<unsigned>(slotIndex + 1U));
+
+  return String(fallbackName);
+
+} //   getPatternNameForSlot()
+
+//-- Count loaded pattern slots currently known by the UI.
+static uint8_t getLoadedPatternSlotCount()
+{
+  uint8_t loadedPatternCount = 0;
+
+  for (uint8_t slotIndex = 0; slotIndex < sequencerPatternCount; slotIndex++)
+  {
+    if (!uiState.chainSlotPatternNames[slotIndex].isEmpty())
+    {
+      loadedPatternCount = static_cast<uint8_t>(slotIndex + 1U);
+    }
+  }
+
+  if (loadedPatternCount < 1)
+  {
+    loadedPatternCount = 1;
+  }
+
+  return loadedPatternCount;
+
+} //   getLoadedPatternSlotCount()
 
 //-- Resolve storage target directly from pattern letter: A-H Local, I-Z Card.
 static PatternStorageTarget storageTargetFromPatternLetter(char patternLetter)
@@ -413,7 +452,27 @@ static void applyEditPopupValueDelta(int delta)
 
     if (uiState.editPopupChainFocus == chainPopupFocusLength)
     {
-      sequencerAdjustChainLength(delta > 0 ? 1 : -1);
+      uint8_t loadedPatternCount = getLoadedPatternSlotCount();
+
+      if (loadedPatternCount < 1)
+      {
+        loadedPatternCount = 1;
+      }
+
+      if (delta > 0)
+      {
+        if (view.chainLength < loadedPatternCount)
+        {
+          sequencerAdjustChainLength(1);
+        }
+      }
+      else
+      {
+        if (view.chainLength > 1U)
+        {
+          sequencerAdjustChainLength(-1);
+        }
+      }
     }
     else if (uiState.editPopupChainFocus == chainPopupFocusPattern)
     {
@@ -427,7 +486,9 @@ static void applyEditPopupValueDelta(int delta)
       }
       else
       {
-        if (view.chainLength <= 1U)
+        uint8_t loadedPatternCount = getLoadedPatternSlotCount();
+
+        if (loadedPatternCount > 1U && view.chainLength <= 1U)
         {
           sequencerAdjustChainLength(1);
         }
@@ -836,6 +897,20 @@ static void showPatternStatus(const String& statusText, uint32_t durationMs)
 
 } //   showPatternStatus()
 
+//-- Draw an immediate busy popup before a blocking SD action starts.
+static void drawBusyPopupNow(const String& title, const String& message)
+{
+  String popupLines[2];
+
+  popupLines[0] = fitListRowText(message);
+  popupLines[1] = "Please wait...";
+
+  display.drawSelectionOverlay(title.c_str(), popupLines, 2, 0);
+
+  delay(50);
+
+} //   drawBusyPopupNow()
+
 //-- Build visible pattern group input text with cursor marker.
 static String buildPatternGroupNameInputText()
 {
@@ -900,26 +975,51 @@ static void openPatternGroupNameInput(bool copyMode)
   uiState.patternGroupNameInputCopyMode = copyMode;
   uiState.patternGroupNameInputCursor = 0;
   uiState.patternGroupNameInputTokenIndex = 0;
+  uiState.patternGroupNameInputDrawn = false;
   uiState.dirty = true;
 
 } //   openPatternGroupNameInput()
 
-//-- Draw pattern group name input screen.
+//-- Draw or partially update pattern group name input popup.
 static void drawPatternGroupNameInput()
 {
+  String lines[6];
+  String sourceGroupName = settingsStoreGetActivePatternGroup();
   String inputText = buildPatternGroupNameInputText();
-  String currentToken =
-      String(patternGroupNameInputTokens[uiState.patternGroupNameInputTokenIndex]);
+  String tokenText =
+      "Turn=" + String(patternGroupNameInputTokens[uiState.patternGroupNameInputTokenIndex]);
   const char* title = uiState.patternGroupNameInputCopyMode ? "Copy Pattern" : "Rename Pattern";
 
-  display.drawTextInput(title, inputText.c_str(), currentToken.c_str());
+  if (!uiState.patternGroupNameInputDrawn)
+  {
+    lines[0] = uiState.patternGroupNameInputCopyMode ? "Copy:" : "Rename:";
+    lines[1] = sourceGroupName;
+    lines[2] = "To:";
+    lines[3] = inputText;
+    lines[4] = tokenText;
+    lines[5] = uiState.patternGroupNameInputCopyMode ? "Hold=Copy K0=Back" : "Hold=Rename K0=Back";
+
+    display.drawSelectionOverlay(title, lines, 6, -1);
+
+    uiState.patternGroupNameInputDrawn = true;
+  }
+  else
+  {
+    display.updateSelectionOverlayRow(3, inputText);
+    display.updateSelectionOverlayRow(4, tokenText);
+  }
 
 } //   drawPatternGroupNameInput()
 
-//-- Apply encoder rotation to current pattern group input character.
+//-- Rotate current pattern group input character.
 static void rotatePatternGroupNameInput(int delta)
 {
   int tokenCount = static_cast<int>(strlen(patternGroupNameInputTokens));
+
+  if (tokenCount <= 0)
+  {
+    return;
+  }
 
   uiState.patternGroupNameInputTokenIndex += delta;
 
@@ -961,6 +1061,7 @@ static void backspacePatternGroupNameInput()
   if (uiState.patternGroupNameInputCursor <= 0)
   {
     uiState.patternGroupNameInputOpen = false;
+    uiState.patternGroupNameInputDrawn = false;
     uiState.dirty = true;
     return;
   }
@@ -984,6 +1085,7 @@ static void commitPatternGroupNameInput()
   if (newGroupName.isEmpty())
   {
     uiState.patternGroupNameInputOpen = false;
+    uiState.patternGroupNameInputDrawn = false;
     showPatternStatus("Name empty", 2000);
     uiState.dirty = true;
 
@@ -992,6 +1094,7 @@ static void commitPatternGroupNameInput()
 
   //-- Close input first so the busy popup can be drawn before the SD action starts.
   uiState.patternGroupNameInputOpen = false;
+  uiState.patternGroupNameInputDrawn = false;
   uiState.patternStatusOpen = false;
   uiState.patternStatusText = "";
   uiState.dirty = true;
@@ -1141,44 +1244,6 @@ static void updateListFirstVisibleIndex(int selectedIndex, int itemCount, int& f
   }
 
 } //   updateListFirstVisibleIndex()
-
-//-- Return pattern name for a loaded pattern slot.
-static String getPatternNameForSlot(uint8_t slotIndex)
-{
-  char fallbackName[8];
-
-  if (slotIndex < sequencerPatternCount && !uiState.chainSlotPatternNames[slotIndex].isEmpty())
-  {
-    return uiState.chainSlotPatternNames[slotIndex];
-  }
-
-  snprintf(fallbackName, sizeof(fallbackName), "p%02u", static_cast<unsigned>(slotIndex + 1U));
-
-  return String(fallbackName);
-
-} //   getPatternNameForSlot()
-
-//-- Count loaded pattern slots currently known by the UI.
-static uint8_t getLoadedPatternSlotCount()
-{
-  uint8_t loadedPatternCount = 0;
-
-  for (uint8_t slotIndex = 0; slotIndex < sequencerPatternCount; slotIndex++)
-  {
-    if (!uiState.chainSlotPatternNames[slotIndex].isEmpty())
-    {
-      loadedPatternCount = static_cast<uint8_t>(slotIndex + 1U);
-    }
-  }
-
-  if (loadedPatternCount < 1)
-  {
-    loadedPatternCount = 1;
-  }
-
-  return loadedPatternCount;
-
-} //   getLoadedPatternSlotCount()
 
 //-- Refresh cached pattern names.
 static void refreshPatternList()
@@ -1666,6 +1731,12 @@ static bool loadSelectedCardPatternGroup()
     sequencerStopImmediately();
   }
 
+  uiState.patternListOpen = false;
+  uiState.cardStorageMenuOpen = false;
+  uiState.dirty = true;
+
+  drawBusyPopupNow("Load Pattern", "Loading " + selectedGroupName);
+
   if (!loadCardPatternGroupIntoMemory(selectedGroupName, true))
   {
     return false;
@@ -1775,6 +1846,7 @@ static bool loadCardPatternGroupIntoMemory(const String& groupName, bool showSta
 static bool saveLoadedPatternGroupToCard()
 {
   PatternData patternData;
+  SequencerView view;
   String groupName = settingsStoreGetActivePatternGroup();
   int savedCount = 0;
 
@@ -1784,8 +1856,6 @@ static bool saveLoadedPatternGroupToCard()
     return false;
   }
 
-  SequencerView view;
-
   sequencerGetView(view);
 
   if (view.playing)
@@ -1794,6 +1864,9 @@ static bool saveLoadedPatternGroupToCard()
   }
 
   flushPendingChainSettings();
+
+  drawBusyPopupNow("Save Pattern", "Saving " + groupName);
+
   uint8_t loadedPatternCount = getLoadedPatternSlotCount();
 
   for (uint8_t slotIndex = 0; slotIndex < loadedPatternCount; slotIndex++)
@@ -1811,6 +1884,7 @@ static bool saveLoadedPatternGroupToCard()
     }
 
     sequencerExportPatternFromSlot(slotIndex, patternData);
+
     patternData.chainTarget = uiState.chainSlotTargetPatternNames[slotIndex];
 
     if (!settingsStoreSavePatternToCard(groupName, patternName, patternData))
@@ -1839,6 +1913,7 @@ static bool saveLoadedPatternGroupToCard()
       }
     }
   }
+
   saveRuntimeSettingsFromCurrentState();
 
   showPatternStatus("Saved group\n" + groupName, 2500);
@@ -1981,10 +2056,21 @@ static String formatGrooveboxFooter(const SequencerView& view)
 
   if (view.chainEnabled && view.chainLength > 1U)
   {
-    uint8_t nextSlotIndex =
-        static_cast<uint8_t>((view.playingPatternIndex + 1U) % view.chainLength);
+    uint8_t loadedPatternCount = getLoadedPatternSlotCount();
+    uint8_t effectiveChainLength = view.chainLength;
 
-    nextPatternName = getPatternNameForSlot(nextSlotIndex);
+    if (effectiveChainLength > loadedPatternCount)
+    {
+      effectiveChainLength = loadedPatternCount;
+    }
+
+    if (effectiveChainLength > 1U)
+    {
+      uint8_t nextSlotIndex =
+          static_cast<uint8_t>((view.playingPatternIndex + 1U) % effectiveChainLength);
+
+      nextPatternName = getPatternNameForSlot(nextSlotIndex);
+    }
   }
 
   if (!nextPatternName.isEmpty() && !groupName.isEmpty())
@@ -2619,6 +2705,7 @@ void uiManagerInit()
   uiState.patternGroupNameInputCopyMode = false;
   uiState.patternGroupNameInputCursor = 0;
   uiState.patternGroupNameInputTokenIndex = 0;
+  uiState.patternGroupNameInputDrawn = false;
 
   for (int charIndex = 0; charIndex <= patternGroupNameInputLength; charIndex++)
   {

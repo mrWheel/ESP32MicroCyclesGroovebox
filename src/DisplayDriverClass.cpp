@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 17:49 ***/
+/*** Last Changed: 2026-05-31 - 12:29 ***/
 #include "DisplayDriverClass.h"
 #include "appConfig.h"
 #include "colorSettings.h"
@@ -66,7 +66,8 @@ static std::string lastHeaderRightText = "";
 static void drawStatusTile(int x, int y, int w, int h, const char* label, const std::string& value);
 
 //--- Draw status action row (buttons or external trigger label)
-static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode, bool hideActionsFor24h, const std::string& hideActionsMessage);
+static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode,
+                                    bool hideActionsFor24h, const std::string& hideActionsMessage);
 
 //--- Invalidate status screen cache
 static void invalidateStatusScreenCache();
@@ -75,13 +76,15 @@ static void invalidateStatusScreenCache();
 static void drawHeader(const char* title, const char* rightText = nullptr);
 
 //--- Draw centered single line text
-static void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor, uint16_t backgroundColor);
+static void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor,
+                             uint16_t backgroundColor);
 
 //--- Draw a generic status tile
 static void drawStatusTile(int x, int y, int w, int h, const char* label, const std::string& value);
 
 //--- Draw status action row (buttons or external trigger label)
-static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode, bool hideActionsFor24h, const std::string& hideActionsMessage);
+static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode,
+                                    bool hideActionsFor24h, const std::string& hideActionsMessage);
 
 //--- Blend two RGB565 colors by 8-bit factor
 static uint16_t blendRgb565(uint16_t darkColor, uint16_t lightColor, uint8_t blendFactor);
@@ -183,7 +186,8 @@ void DisplayDriver::drawStatusScreen(const DisplayStatusScreenData& data)
   if (!statusScreenPrepared)
   {
     tft.fillScreen(ST77XX_BLACK);
-    drawHeader(data.title.c_str(), data.headerRightText.empty() ? nullptr : data.headerRightText.c_str());
+    drawHeader(data.title.c_str(),
+               data.headerRightText.empty() ? nullptr : data.headerRightText.c_str());
 
     for (int lineIndex = 0; lineIndex < statusLineCount; lineIndex++)
     {
@@ -198,7 +202,11 @@ void DisplayDriver::drawStatusScreen(const DisplayStatusScreenData& data)
   nextStatusLines[2] = data.rightTimeTileLabel + "|" + data.rightTimeTileValue;
   nextStatusLines[3] = data.centerTileLabel + "|" + data.centerTileValue;
   nextStatusLines[4] = data.bottomTileLabel + "|" + data.bottomTileValue;
-  nextStatusLines[5] = "A:" + std::to_string(data.statusActionIndex) + "|E:" + std::to_string(data.externalTriggerMode ? 1 : 0) + "|Y:" + std::to_string(data.is24hTimer ? 1 : 0) + "|W:" + std::to_string(data.warpSpeedEnabled ? 1 : 0) + "|H:" + std::to_string(data.hideActionsFor24h ? 1 : 0);
+  nextStatusLines[5] = "A:" + std::to_string(data.statusActionIndex) +
+                       "|E:" + std::to_string(data.externalTriggerMode ? 1 : 0) +
+                       "|Y:" + std::to_string(data.is24hTimer ? 1 : 0) +
+                       "|W:" + std::to_string(data.warpSpeedEnabled ? 1 : 0) +
+                       "|H:" + std::to_string(data.hideActionsFor24h ? 1 : 0);
 
   for (int lineIndex = 0; lineIndex < statusLineCount; lineIndex++)
   {
@@ -221,7 +229,8 @@ void DisplayDriver::drawStatusScreen(const DisplayStatusScreenData& data)
       drawStatusTile(col1X, tileStartY, fullW, tileH, "STATE", data.stateValue);
 
       tft.setTextSize(2);
-      tft.getTextBounds(data.stateValue.c_str(), 0, 0, &textX1, &textY1, &stateTextWidth, &stateTextHeight);
+      tft.getTextBounds(data.stateValue.c_str(), 0, 0, &textX1, &textY1, &stateTextWidth,
+                        &stateTextHeight);
       tft.getTextBounds(profileValue.c_str(), 0, 0, &textX1, &textY1, &textWidth, &textHeight);
       profileX = col1X + fullW - static_cast<int>(textWidth) - 6;
       minimumProfileX = col1X + 4 + static_cast<int>(stateTextWidth) + 12;
@@ -240,44 +249,52 @@ void DisplayDriver::drawStatusScreen(const DisplayStatusScreenData& data)
     case 1:
       if (data.is24hTimer)
       {
-        drawStatusTile(col1X, tileStartY + 2 * (tileH + tileGap), col1W, tileH, data.leftTimeTileLabel.c_str(), data.leftTimeTileValue);
+        drawStatusTile(col1X, tileStartY + 2 * (tileH + tileGap), col1W, tileH,
+                       data.leftTimeTileLabel.c_str(), data.leftTimeTileValue);
       }
       else
       {
-        drawStatusTile(col1X, tileStartY + tileH + tileGap, col1W, tileH, data.leftTimeTileLabel.c_str(), data.leftTimeTileValue);
+        drawStatusTile(col1X, tileStartY + tileH + tileGap, col1W, tileH,
+                       data.leftTimeTileLabel.c_str(), data.leftTimeTileValue);
       }
       break;
 
     case 2:
       if (data.is24hTimer)
       {
-        drawStatusTile(col2X, tileStartY + 2 * (tileH + tileGap), col2W, tileH, data.rightTimeTileLabel.c_str(), data.rightTimeTileValue);
+        drawStatusTile(col2X, tileStartY + 2 * (tileH + tileGap), col2W, tileH,
+                       data.rightTimeTileLabel.c_str(), data.rightTimeTileValue);
       }
       else
       {
-        drawStatusTile(col2X, tileStartY + tileH + tileGap, col2W, tileH, data.rightTimeTileLabel.c_str(), data.rightTimeTileValue);
+        drawStatusTile(col2X, tileStartY + tileH + tileGap, col2W, tileH,
+                       data.rightTimeTileLabel.c_str(), data.rightTimeTileValue);
       }
       break;
 
     case 3:
       if (data.is24hTimer)
       {
-        drawStatusTile(col1X, tileStartY + tileH + tileGap, fullW, tileH, data.centerTileLabel.c_str(), data.centerTileValue);
+        drawStatusTile(col1X, tileStartY + tileH + tileGap, fullW, tileH,
+                       data.centerTileLabel.c_str(), data.centerTileValue);
       }
       else
       {
-        drawStatusTile(col1X, tileStartY + 2 * (tileH + tileGap), fullW, tileH, data.centerTileLabel.c_str(), data.centerTileValue);
+        drawStatusTile(col1X, tileStartY + 2 * (tileH + tileGap), fullW, tileH,
+                       data.centerTileLabel.c_str(), data.centerTileValue);
       }
       break;
 
     case 4:
       if (data.is24hTimer)
       {
-        drawStatusTile(col1X, tileStartY + 3 * (tileH + tileGap), fullW, tileH, data.bottomTileLabel.c_str(), data.bottomTileValue);
+        drawStatusTile(col1X, tileStartY + 3 * (tileH + tileGap), fullW, tileH,
+                       data.bottomTileLabel.c_str(), data.bottomTileValue);
       }
       else
       {
-        drawStatusTile(col1X, tileStartY + 3 * (tileH + tileGap), fullW, tileH, data.bottomTileLabel.c_str(), data.bottomTileValue);
+        drawStatusTile(col1X, tileStartY + 3 * (tileH + tileGap), fullW, tileH,
+                       data.bottomTileLabel.c_str(), data.bottomTileValue);
 
         if (data.warpSpeedEnabled)
         {
@@ -306,7 +323,8 @@ void DisplayDriver::drawStatusScreen(const DisplayStatusScreenData& data)
       break;
 
     case 5:
-      drawStatusActionButtons(data.statusActionIndex, data.externalTriggerMode, data.hideActionsFor24h, data.actionRowMessage);
+      drawStatusActionButtons(data.statusActionIndex, data.externalTriggerMode,
+                              data.hideActionsFor24h, data.actionRowMessage);
       break;
     }
 
@@ -323,7 +341,8 @@ void displayForceStatusScreenRebuild()
 } //   displayForceStatusScreenRebuild()
 
 //--- Draw text list
-void displayDrawListScreen(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex)
+void displayDrawListScreen(const char* title, const String items[], size_t itemCount,
+                           int selectedIndex, int firstVisibleIndex)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -368,7 +387,9 @@ void displayDrawListScreen(const char* title, const String items[], size_t itemC
 } //   displayDrawListScreen()
 
 //--- Draw text list with disabled items support
-void displayDrawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const bool disabledItems[])
+void displayDrawListScreenWithDisabledItems(const char* title, const String items[],
+                                            size_t itemCount, int selectedIndex,
+                                            int firstVisibleIndex, const bool disabledItems[])
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -505,7 +526,8 @@ void displayDrawEnumEditor(const char* label, const char* valueLabel)
 } //   displayDrawEnumEditor()
 
 //--- Draw text input editor
-void displayDrawTextInput(const char* title, const std::string& textValue, const std::string& currentToken)
+void displayDrawTextInput(const char* title, const std::string& textValue,
+                          const std::string& currentToken)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -541,10 +563,16 @@ void displayDrawTextInput(const char* title, const std::string& textValue, const
 //--- typeIsCursor:         true = <X>, false = [X]
 //--- showQuarters:         true = show 4 quarter tiles below
 //--- quarterCursorSlot:    -1 = no active slot cursor, 0-3 = cursor on this slot
-//--- quarterSlotHasCursor: true = slot label is cursor; false = slot is locked, type label may be cursor
-//--- quarterTypeCursorLabel: nullptr = no separate type cursor; else override active slot's state label
+//--- quarterSlotHasCursor: true = slot label is cursor; false = slot is locked, type label may be
+//cursor
+//--- quarterTypeCursorLabel: nullptr = no separate type cursor; else override active slot's state
+//label
 //--- quarterTypeIsCursor:  true = type label shown as cursor <X>, false as locked [X]
-void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char* typeLabel, bool typeIsCursor, bool showQuarters, const char* quarterStateLabels[4], int quarterCursorSlot, bool quarterSlotHasCursor, const char* quarterTypeCursorLabel, bool quarterTypeIsCursor)
+void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char* typeLabel,
+                               bool typeIsCursor, bool showQuarters,
+                               const char* quarterStateLabels[4], int quarterCursorSlot,
+                               bool quarterSlotHasCursor, const char* quarterTypeCursorLabel,
+                               bool quarterTypeIsCursor)
 {
   static const char* const slotNames[4] = {"00-15", "16-30", "31-45", "46-59"};
   const int tileX = 3;
@@ -579,7 +607,8 @@ void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char*
   tft.print("Hour");
 
   //-- Hour value with cursor or lock brackets
-  snprintf(labelBuf, sizeof(labelBuf), hourIsCursor ? ">%02u<" : "[%02u]", static_cast<unsigned>(hourIndex));
+  snprintf(labelBuf, sizeof(labelBuf), hourIsCursor ? ">%02u<" : "[%02u]",
+           static_cast<unsigned>(hourIndex));
   tft.setTextSize(3);
   tft.setCursor(tileX + 12, topTileY + 32);
   tft.print(labelBuf);
@@ -695,8 +724,11 @@ void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char*
 } //   displayDraw24hTimerEditor()
 
 //--- Draw generic field input screen
-void displayDrawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue, int cursorIndex, const std::string& prevToken, const std::string& currentToken, const std::string& nextToken,
-                           const char* tokenOptions[], int tokenOptionCount, int selectedOptionIndex)
+void displayDrawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue,
+                           int cursorIndex, const std::string& prevToken,
+                           const std::string& currentToken, const std::string& nextToken,
+                           const char* tokenOptions[], int tokenOptionCount,
+                           int selectedOptionIndex)
 {
   //--- Per colorSettings.md: PANEL_COLOR() for fills/borders, ST77XX_BLACK for readable text.
   uint16_t tokenCurrentColor = ST77XX_BLACK;
@@ -708,7 +740,8 @@ void displayDrawFieldInput(const char* title, const char* fieldName, const std::
 
   const int tileX = 3;
   const int tileW = 314;
-  bool useButtonOptions = (cursorIndex == 0) && (tokenOptions != nullptr) && (tokenOptionCount >= 2) && (tokenOptionCount <= 6);
+  bool useButtonOptions = (cursorIndex == 0) && (tokenOptions != nullptr) &&
+                          (tokenOptionCount >= 2) && (tokenOptionCount <= 6);
   bool useTwoRowButtons = useButtonOptions && (tokenOptionCount > 4);
 
   //--- Tile 1: field name + value, cursor arrows (higher and roomier)
@@ -903,7 +936,8 @@ void displayDrawMessage(const char* title, const char* message)
 } //   displayDrawMessage()
 
 //--- Draw centered WiFi portal info screen
-void displayDrawWifiPortalScreen(const std::string& line1, const std::string& line2, const std::string& line3, const std::string& line4)
+void displayDrawWifiPortalScreen(const std::string& line1, const std::string& line2,
+                                 const std::string& line3, const std::string& line4)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -986,7 +1020,8 @@ void displayDrawTestColorPalette(int selectedIndex)
     int y = barY0 + (drawIndex * barH);
     int drawH = barH;
     uint16_t panelColor = PANEL_COLOR(colorProfiles[profileIndex].getDarkColor());
-    uint16_t labelColor = mapVisualTextColorToPanelColor(colorProfiles[profileIndex].darkLabelColor);
+    uint16_t labelColor =
+        mapVisualTextColorToPanelColor(colorProfiles[profileIndex].darkLabelColor);
 
     if (drawIndex == (barCount - 1))
     {
@@ -1011,7 +1046,9 @@ void displayDrawTestColorPalette(int selectedIndex)
 } //   displayDrawTestColorPalette()
 
 //--- Draw color fade test for selected color
-void displayDrawTestColorFade(const char* colorName, uint16_t darkColorVisual, uint16_t lightColorVisual, VisualTextColor darkLabelColor, VisualTextColor lightLabelColor)
+void displayDrawTestColorFade(const char* colorName, uint16_t darkColorVisual,
+                              uint16_t lightColorVisual, VisualTextColor darkLabelColor,
+                              VisualTextColor lightLabelColor)
 {
   const int rowCount = 8;
   const int rowY0 = 24;
@@ -1107,7 +1144,8 @@ static void drawHeader(const char* title, const char* rightText)
 } //   drawHeader()
 
 //--- Draw centered single line text
-static void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor, uint16_t backgroundColor)
+static void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor,
+                             uint16_t backgroundColor)
 {
   int16_t x1;
   int16_t y1;
@@ -1153,13 +1191,10 @@ static void drawStatusTile(int x, int y, int w, int h, const char* label, const 
 } //   drawStatusTile()
 
 //--- Draw status action row (buttons or external trigger label)
-static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode, bool hideActionsFor24h, const std::string& hideActionsMessage)
+static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerMode,
+                                    bool hideActionsFor24h, const std::string& hideActionsMessage)
 {
-  static const char* labels[] =
-      {
-          "Start",
-          "Stop",
-          "Reset"};
+  static const char* labels[] = {"Start", "Stop", "Reset"};
 
   const int buttonY = 194;
   const int buttonHeight = 30;
@@ -1228,7 +1263,8 @@ static void drawStatusActionButtons(int statusActionIndex, bool externalTriggerM
   {
     int buttonX = firstButtonX + (buttonIndex * (buttonWidth + buttonSpacing));
     bool isSelected = (buttonIndex == statusActionIndex);
-    display.drawButton(buttonX, buttonY, buttonWidth, buttonHeight, labels[buttonIndex], isSelected);
+    display.drawButton(buttonX, buttonY, buttonWidth, buttonHeight, labels[buttonIndex],
+                       isSelected);
   }
 
 } //   drawStatusActionButtons()
@@ -1252,9 +1288,18 @@ static uint16_t blendRgb565(uint16_t darkColor, uint16_t lightColor, uint8_t ble
   uint8_t lightR = static_cast<uint8_t>((lightColor >> 11) & 0x1FU);
   uint8_t lightG = static_cast<uint8_t>((lightColor >> 5) & 0x3FU);
   uint8_t lightB = static_cast<uint8_t>(lightColor & 0x1FU);
-  uint16_t mixedR = static_cast<uint16_t>((static_cast<uint16_t>(darkR) * static_cast<uint16_t>(255U - blendFactor) + static_cast<uint16_t>(lightR) * static_cast<uint16_t>(blendFactor)) / 255U);
-  uint16_t mixedG = static_cast<uint16_t>((static_cast<uint16_t>(darkG) * static_cast<uint16_t>(255U - blendFactor) + static_cast<uint16_t>(lightG) * static_cast<uint16_t>(blendFactor)) / 255U);
-  uint16_t mixedB = static_cast<uint16_t>((static_cast<uint16_t>(darkB) * static_cast<uint16_t>(255U - blendFactor) + static_cast<uint16_t>(lightB) * static_cast<uint16_t>(blendFactor)) / 255U);
+  uint16_t mixedR = static_cast<uint16_t>(
+      (static_cast<uint16_t>(darkR) * static_cast<uint16_t>(255U - blendFactor) +
+       static_cast<uint16_t>(lightR) * static_cast<uint16_t>(blendFactor)) /
+      255U);
+  uint16_t mixedG = static_cast<uint16_t>(
+      (static_cast<uint16_t>(darkG) * static_cast<uint16_t>(255U - blendFactor) +
+       static_cast<uint16_t>(lightG) * static_cast<uint16_t>(blendFactor)) /
+      255U);
+  uint16_t mixedB = static_cast<uint16_t>(
+      (static_cast<uint16_t>(darkB) * static_cast<uint16_t>(255U - blendFactor) +
+       static_cast<uint16_t>(lightB) * static_cast<uint16_t>(blendFactor)) /
+      255U);
 
   return static_cast<uint16_t>((mixedR << 11) | (mixedG << 5) | mixedB);
 
@@ -1457,14 +1502,16 @@ void DisplayDriver::drawHeader(const char* title, const char* rightText)
 } //   DisplayDriver::drawHeader()
 
 //--- Draw centered single line text
-void DisplayDriver::drawCenteredLine(const std::string& lineText, int y, uint16_t textColor, uint16_t backgroundColor)
+void DisplayDriver::drawCenteredLine(const std::string& lineText, int y, uint16_t textColor,
+                                     uint16_t backgroundColor)
 {
   ::drawCenteredLine(lineText, y, textColor, backgroundColor);
 
 } //   DisplayDriver::drawCenteredLine()
 
 //--- Draw a generic button
-void DisplayDriver::drawButton(int x, int y, int width, int height, const char* label, bool selected)
+void DisplayDriver::drawButton(int x, int y, int width, int height, const char* label,
+                               bool selected)
 {
   int16_t textX1;
   int16_t textY1;
@@ -1529,24 +1576,32 @@ void DisplayDriver::drawTempoOverlay(uint16_t bpm, uint8_t swingPercent, bool bp
   tft.fillRoundRect(panelX, panelY, panelW, panelH, 10, panelFillColor);
   tft.drawRoundRect(panelX, panelY, panelW, panelH, 10, panelBorderColor);
 
-  tft.fillRoundRect(rowX, bpmRowY, rowW, rowH, 6, bpmSelected ? getUiSelectedFillColor() : panelFillColor);
-  tft.drawRoundRect(rowX, bpmRowY, rowW, rowH, 6, bpmSelected ? getUiSelectedBorderColor() : panelBorderColor);
+  tft.fillRoundRect(rowX, bpmRowY, rowW, rowH, 6,
+                    bpmSelected ? getUiSelectedFillColor() : panelFillColor);
+  tft.drawRoundRect(rowX, bpmRowY, rowW, rowH, 6,
+                    bpmSelected ? getUiSelectedBorderColor() : panelBorderColor);
 
-  tft.fillRoundRect(rowX, swingRowY, rowW, rowH, 6, bpmSelected ? panelFillColor : getUiSelectedFillColor());
-  tft.drawRoundRect(rowX, swingRowY, rowW, rowH, 6, bpmSelected ? panelBorderColor : getUiSelectedBorderColor());
+  tft.fillRoundRect(rowX, swingRowY, rowW, rowH, 6,
+                    bpmSelected ? panelFillColor : getUiSelectedFillColor());
+  tft.drawRoundRect(rowX, swingRowY, rowW, rowH, 6,
+                    bpmSelected ? panelBorderColor : getUiSelectedBorderColor());
 
-  snprintf(bpmText, sizeof(bpmText), "BPM %c%03u%c", bpmSelected ? '>' : ' ', static_cast<unsigned>(bpm), bpmSelected ? '<' : ' ');
-  snprintf(swingText, sizeof(swingText), "SW  %c%02u%%%c", bpmSelected ? ' ' : '>', static_cast<unsigned>(swingPercent), bpmSelected ? ' ' : '<');
+  snprintf(bpmText, sizeof(bpmText), "BPM %c%03u%c", bpmSelected ? '>' : ' ',
+           static_cast<unsigned>(bpm), bpmSelected ? '<' : ' ');
+  snprintf(swingText, sizeof(swingText), "SW  %c%02u%%%c", bpmSelected ? ' ' : '>',
+           static_cast<unsigned>(swingPercent), bpmSelected ? ' ' : '<');
 
   tft.setTextSize(2);
 
-  tft.setTextColor(bpmSelected ? getUiSelectedTextColor() : getUiInactiveTextColor(), bpmSelected ? getUiSelectedFillColor() : panelFillColor);
+  tft.setTextColor(bpmSelected ? getUiSelectedTextColor() : getUiInactiveTextColor(),
+                   bpmSelected ? getUiSelectedFillColor() : panelFillColor);
   tft.getTextBounds(bpmText, 0, 0, &x1, &y1, &textW, &textH);
   textX = rowX + ((rowW - static_cast<int>(textW)) / 2);
   tft.setCursor(textX, bpmRowY + 8);
   tft.print(bpmText);
 
-  tft.setTextColor(bpmSelected ? getUiInactiveTextColor() : getUiSelectedTextColor(), bpmSelected ? panelFillColor : getUiSelectedFillColor());
+  tft.setTextColor(bpmSelected ? getUiInactiveTextColor() : getUiSelectedTextColor(),
+                   bpmSelected ? panelFillColor : getUiSelectedFillColor());
   tft.getTextBounds(swingText, 0, 0, &x1, &y1, &textW, &textH);
   textX = rowX + ((rowW - static_cast<int>(textW)) / 2);
   tft.setCursor(textX, swingRowY + 8);
@@ -1555,7 +1610,8 @@ void DisplayDriver::drawTempoOverlay(uint16_t bpm, uint8_t swingPercent, bool bp
 } //   DisplayDriver::drawTempoOverlay()
 
 //--- Draw generic selection popup card over the active screen.
-void DisplayDriver::drawSelectionOverlay(const char* title, const String options[], size_t optionCount, int selectedIndex)
+void DisplayDriver::drawSelectionOverlay(const char* title, const String options[],
+                                         size_t optionCount, int selectedIndex)
 {
   const int shadowX = 20;
   const int shadowY = 36;
@@ -1638,10 +1694,13 @@ void DisplayDriver::drawSelectionOverlay(const char* title, const String options
       optionText = optionText.substring(0, maxOptionChars);
     }
 
-    tft.fillRoundRect(rowX, rowY, rowW, rowH - 2, 5, rowSelected ? getUiSelectedFillColor() : panelFillColor);
-    tft.drawRoundRect(rowX, rowY, rowW, rowH - 2, 5, rowSelected ? getUiSelectedBorderColor() : panelBorderColor);
+    tft.fillRoundRect(rowX, rowY, rowW, rowH - 2, 5,
+                      rowSelected ? getUiSelectedFillColor() : panelFillColor);
+    tft.drawRoundRect(rowX, rowY, rowW, rowH - 2, 5,
+                      rowSelected ? getUiSelectedBorderColor() : panelBorderColor);
 
-    tft.setTextColor(rowSelected ? getUiSelectedTextColor() : getUiInactiveTextColor(), rowSelected ? getUiSelectedFillColor() : panelFillColor);
+    tft.setTextColor(rowSelected ? getUiSelectedTextColor() : getUiInactiveTextColor(),
+                     rowSelected ? getUiSelectedFillColor() : panelFillColor);
     tft.setCursor(rowX + 8, rowY + 4);
 
     tft.print(optionText);
@@ -1649,8 +1708,47 @@ void DisplayDriver::drawSelectionOverlay(const char* title, const String options
 
 } //   DisplayDriver::drawSelectionOverlay()
 
+//--- Partially update one visible row inside the selection overlay popup.
+void DisplayDriver::updateSelectionOverlayRow(int rowIndex, const String& text)
+{
+  const int panelX = 28;
+  const int panelY = 44;
+  const int panelW = 268;
+  const int rowX = panelX + 10;
+  const int rowW = panelW - 20;
+  const int rowH = 22;
+  const int listTopY = panelY + 34;
+  const size_t maxOptionChars = 20;
+
+  if (rowIndex < 0 || rowIndex >= 6)
+  {
+    return;
+  }
+
+  String rowText = text;
+  int rowY = listTopY + (rowIndex * rowH);
+  uint16_t panelFillColor = getUiInactiveFillColor();
+  uint16_t panelBorderColor = getUiInactiveBorderColor();
+
+  if (rowText.length() > maxOptionChars)
+  {
+    rowText = rowText.substring(0, maxOptionChars);
+  }
+
+  tft.fillRoundRect(rowX, rowY, rowW, rowH - 2, 5, panelFillColor);
+
+  tft.drawRoundRect(rowX, rowY, rowW, rowH - 2, 5, panelBorderColor);
+
+  tft.setTextSize(2);
+  tft.setTextColor(getUiInactiveTextColor(), panelFillColor);
+  tft.setCursor(rowX + 8, rowY + 4);
+  tft.print(rowText);
+
+} //   DisplayDriver::updateSelectionOverlayRow()
+
 //--- Add a generic tile to the registry
-int DisplayDriver::addTile(const char* name, int row, int column, int size, const std::string& text, DisplayTextAlign align)
+int DisplayDriver::addTile(const char* name, int row, int column, int size, const std::string& text,
+                           DisplayTextAlign align)
 {
   int tileIndex;
 
@@ -1719,7 +1817,8 @@ void DisplayDriver::clearTiles()
 } //   DisplayDriver::clearTiles()
 
 //--- Draw a list screen
-void DisplayDriver::drawListScreen(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const char* rightText)
+void DisplayDriver::drawListScreen(const char* title, const String items[], size_t itemCount,
+                                   int selectedIndex, int firstVisibleIndex, const char* rightText)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -1828,7 +1927,10 @@ void DisplayDriver::drawListCharacterHighlight(int lineIndex, int charIndex, cha
 } //   DisplayDriver::drawListCharacterHighlight()
 
 //--- Class API wrapper: list screen with disabled items
-void DisplayDriver::drawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const bool disabledItems[])
+void DisplayDriver::drawListScreenWithDisabledItems(const char* title, const String items[],
+                                                    size_t itemCount, int selectedIndex,
+                                                    int firstVisibleIndex,
+                                                    const bool disabledItems[])
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -1963,7 +2065,8 @@ void DisplayDriver::drawEnumEditor(const char* label, const char* valueLabel)
 } //   DisplayDriver::drawEnumEditor()
 
 //--- Class API wrapper: text input
-void DisplayDriver::drawTextInput(const char* title, const std::string& textValue, const std::string& currentToken)
+void DisplayDriver::drawTextInput(const char* title, const std::string& textValue,
+                                  const std::string& currentToken)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -1993,9 +2096,42 @@ void DisplayDriver::drawTextInput(const char* title, const std::string& textValu
 
 } //   DisplayDriver::drawTextInput()
 
+//--- Partially update text input value and current token only.
+void DisplayDriver::updateTextInputValue(const std::string& textValue,
+                                         const std::string& currentToken)
+{
+  const int valueX = 6;
+  const int valueY = 75;
+  const int valueW = 300;
+  const int valueH = 28;
+
+  const int tokenX = 6;
+  const int tokenY = 140;
+  const int tokenW = 120;
+  const int tokenH = 36;
+
+  tft.fillRect(valueX, valueY, valueW, valueH, ST77XX_BLACK);
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(valueX, valueY);
+  tft.print(textValue.c_str());
+
+  tft.fillRect(tokenX, tokenY, tokenW, tokenH, ST77XX_BLACK);
+  tft.setTextColor(getUiAccentColor(), ST77XX_BLACK);
+  tft.setTextSize(3);
+  tft.setCursor(tokenX, tokenY);
+  tft.print("[");
+  tft.print(currentToken.c_str());
+  tft.print("]");
+
+} //   DisplayDriver::updateTextInputValue()
+
 //--- Draw generic field input screen
-void DisplayDriver::drawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue, int cursorIndex, const std::string& prevToken, const std::string& currentToken, const std::string& nextToken,
-                                   const char* tokenOptions[], int tokenOptionCount, int selectedOptionIndex)
+void DisplayDriver::drawFieldInput(const char* title, const char* fieldName,
+                                   const std::string& fieldValue, int cursorIndex,
+                                   const std::string& prevToken, const std::string& currentToken,
+                                   const std::string& nextToken, const char* tokenOptions[],
+                                   int tokenOptionCount, int selectedOptionIndex)
 {
   //--- Per colorSettings.md: PANEL_COLOR() for fills/borders, ST77XX_BLACK for readable text.
   uint16_t tokenCurrentColor = ST77XX_BLACK;
@@ -2007,7 +2143,8 @@ void DisplayDriver::drawFieldInput(const char* title, const char* fieldName, con
 
   const int tileX = 3;
   const int tileW = 314;
-  bool useButtonOptions = (cursorIndex == 0) && (tokenOptions != nullptr) && (tokenOptionCount >= 2) && (tokenOptionCount <= 6);
+  bool useButtonOptions = (cursorIndex == 0) && (tokenOptions != nullptr) &&
+                          (tokenOptionCount >= 2) && (tokenOptionCount <= 6);
   bool useTwoRowButtons = useButtonOptions && (tokenOptionCount > 4);
 
   //--- Tile 1: field name + value, cursor arrows (higher and roomier)
@@ -2202,7 +2339,8 @@ void DisplayDriver::drawMessage(const char* title, const char* message)
 } //   DisplayDriver::drawMessage()
 
 //--- Draw centered WiFi portal info screen
-void DisplayDriver::drawWifiPortalScreen(const std::string& line1, const std::string& line2, const std::string& line3, const std::string& line4)
+void DisplayDriver::drawWifiPortalScreen(const std::string& line1, const std::string& line2,
+                                         const std::string& line3, const std::string& line4)
 {
   invalidateStatusScreenCache();
   tft.fillScreen(ST77XX_BLACK);
@@ -2285,7 +2423,8 @@ void DisplayDriver::drawTestColorPalette(int selectedIndex)
     int y = barY0 + (drawIndex * barH);
     int drawH = barH;
     uint16_t panelColor = PANEL_COLOR(colorProfiles[profileIndex].getDarkColor());
-    uint16_t labelColor = mapVisualTextColorToPanelColor(colorProfiles[profileIndex].darkLabelColor);
+    uint16_t labelColor =
+        mapVisualTextColorToPanelColor(colorProfiles[profileIndex].darkLabelColor);
 
     if (drawIndex == (barCount - 1))
     {
@@ -2310,7 +2449,9 @@ void DisplayDriver::drawTestColorPalette(int selectedIndex)
 } //   DisplayDriver::drawTestColorPalette()
 
 //--- Draw color fade test for selected color
-void DisplayDriver::drawTestColorFade(const char* colorName, uint16_t darkColorVisual, uint16_t lightColorVisual, VisualTextColor darkLabelColor, VisualTextColor lightLabelColor)
+void DisplayDriver::drawTestColorFade(const char* colorName, uint16_t darkColorVisual,
+                                      uint16_t lightColorVisual, VisualTextColor darkLabelColor,
+                                      VisualTextColor lightLabelColor)
 {
   const int rowCount = 8;
   const int rowY0 = 24;

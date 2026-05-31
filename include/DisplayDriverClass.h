@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-27 - 17:49 ***/
+/*** Last Changed: 2026-05-31 - 12:29 ***/
 #ifndef DISPLAY_DRIVER_H
 #define DISPLAY_DRIVER_H
 
@@ -78,31 +78,44 @@ public:
   void setTileGrid(int originX, int originY, int cellWidth, int cellHeight, int gap);
   void clearScreen(uint16_t color);
   void drawHeader(const char* title, const char* rightText = nullptr);
-  void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor, uint16_t backgroundColor);
+  void drawCenteredLine(const std::string& lineText, int y, uint16_t textColor,
+                        uint16_t backgroundColor);
   void drawStatusScreen(const DisplayStatusScreenData& data);
 
-  int addTile(const char* name, int row, int column, int size, const std::string& text, DisplayTextAlign align = DisplayTextAlign::Left);
+  int addTile(const char* name, int row, int column, int size, const std::string& text,
+              DisplayTextAlign align = DisplayTextAlign::Left);
   bool updateTile(int tileIndex, const std::string& text);
   bool updateTile(const char* name, const std::string& text);
   void clearTiles();
-  void drawListScreen(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const char* rightText = nullptr);
+  void drawListScreen(const char* title, const String items[], size_t itemCount, int selectedIndex,
+                      int firstVisibleIndex, const char* rightText = nullptr);
   void drawListLine(int lineIndex, const String& text, bool selected);
   void drawListCharacterHighlight(int lineIndex, int charIndex, char character);
-  void drawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const bool disabledItems[]);
+  void drawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount,
+                                       int selectedIndex, int firstVisibleIndex,
+                                       const bool disabledItems[]);
   void drawTempoOverlay(uint16_t bpm, uint8_t swingPercent, bool bpmSelected);
-  void drawSelectionOverlay(const char* title, const String options[], size_t optionCount, int selectedIndex);
+  void drawSelectionOverlay(const char* title, const String options[], size_t optionCount,
+                            int selectedIndex);
+  void updateSelectionOverlayRow(int rowIndex, const String& text);
   void refreshHeaderIfNeeded(const char* rightText, uint32_t minimumIntervalMs);
   void drawNumberEditor(const char* label, uint32_t value, const char* unitLabel);
   void drawEnumEditor(const char* label, const char* valueLabel);
-  void drawTextInput(const char* title, const std::string& textValue, const std::string& currentToken);
-  void drawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue, int cursorIndex, const std::string& prevToken, const std::string& currentToken, const std::string& nextToken,
+  void drawTextInput(const char* title, const std::string& textValue,
+                     const std::string& currentToken);
+  void updateTextInputValue(const std::string& textValue, const std::string& currentToken);
+  void drawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue,
+                      int cursorIndex, const std::string& prevToken,
+                      const std::string& currentToken, const std::string& nextToken,
                       const char* tokenOptions[], int tokenOptionCount, int selectedOptionIndex);
   void drawMessage(const char* title, const char* message);
-  void drawWifiPortalScreen(const std::string& line1, const std::string& line2, const std::string& line3, const std::string& line4);
+  void drawWifiPortalScreen(const std::string& line1, const std::string& line2,
+                            const std::string& line3, const std::string& line4);
   void drawStartupConnectionScreen(const std::string& line1, const std::string& line2);
   void drawTestColorPattern();
   void drawTestColorPalette(int selectedIndex);
-  void drawTestColorFade(const char* colorName, uint16_t darkColorVisual, uint16_t lightColorVisual, VisualTextColor darkLabelColor, VisualTextColor lightLabelColor);
+  void drawTestColorFade(const char* colorName, uint16_t darkColorVisual, uint16_t lightColorVisual,
+                         VisualTextColor darkLabelColor, VisualTextColor lightLabelColor);
   void drawButton(int x, int y, int width, int height, const char* label, bool selected);
 
 private:
@@ -122,10 +135,13 @@ int displayGetThemeColorIndex();
 void displayForceStatusScreenRebuild();
 
 //--- Draw text list
-void displayDrawListScreen(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex);
+void displayDrawListScreen(const char* title, const String items[], size_t itemCount,
+                           int selectedIndex, int firstVisibleIndex);
 
 //--- Draw text list with disabled items support
-void displayDrawListScreenWithDisabledItems(const char* title, const String items[], size_t itemCount, int selectedIndex, int firstVisibleIndex, const bool disabledItems[]);
+void displayDrawListScreenWithDisabledItems(const char* title, const String items[],
+                                            size_t itemCount, int selectedIndex,
+                                            int firstVisibleIndex, const bool disabledItems[]);
 
 //--- Refresh current header line when time/WiFi text changes
 void displayRefreshHeaderIfNeeded(const char* rightText, uint32_t minimumIntervalMs);
@@ -137,20 +153,29 @@ void displayDrawNumberEditor(const char* label, uint32_t value, const char* unit
 void displayDrawEnumEditor(const char* label, const char* valueLabel);
 
 //--- Draw text input editor
-void displayDrawTextInput(const char* title, const std::string& textValue, const std::string& currentToken);
+void displayDrawTextInput(const char* title, const std::string& textValue,
+                          const std::string& currentToken);
 
 //--- Draw 24h timer editor
-void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char* typeLabel, bool typeIsCursor, bool showQuarters, const char* quarterStateLabels[4], int quarterCursorSlot, bool quarterSlotHasCursor, const char* quarterTypeCursorLabel, bool quarterTypeIsCursor);
+void displayDraw24hTimerEditor(uint8_t hourIndex, bool hourIsCursor, const char* typeLabel,
+                               bool typeIsCursor, bool showQuarters,
+                               const char* quarterStateLabels[4], int quarterCursorSlot,
+                               bool quarterSlotHasCursor, const char* quarterTypeCursorLabel,
+                               bool quarterTypeIsCursor);
 
 //--- Draw generic field input screen
-void displayDrawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue, int cursorIndex, const std::string& prevToken, const std::string& currentToken, const std::string& nextToken,
-                           const char* tokenOptions[], int tokenOptionCount, int selectedOptionIndex);
+void displayDrawFieldInput(const char* title, const char* fieldName, const std::string& fieldValue,
+                           int cursorIndex, const std::string& prevToken,
+                           const std::string& currentToken, const std::string& nextToken,
+                           const char* tokenOptions[], int tokenOptionCount,
+                           int selectedOptionIndex);
 
 //--- Draw message screen
 void displayDrawMessage(const char* title, const char* message);
 
 //--- Draw centered WiFi portal info screen
-void displayDrawWifiPortalScreen(const std::string& line1, const std::string& line2, const std::string& line3, const std::string& line4);
+void displayDrawWifiPortalScreen(const std::string& line1, const std::string& line2,
+                                 const std::string& line3, const std::string& line4);
 
 //--- Draw centered startup connection screen
 void displayDrawStartupConnectionScreen(const std::string& line1, const std::string& line2);
@@ -162,7 +187,9 @@ void displayDrawTestColorPattern();
 void displayDrawTestColorPalette(int selectedIndex);
 
 //--- Draw color fade test for selected color
-void displayDrawTestColorFade(const char* colorName, uint16_t darkColorVisual, uint16_t lightColorVisual, VisualTextColor darkLabelColor, VisualTextColor lightLabelColor);
+void displayDrawTestColorFade(const char* colorName, uint16_t darkColorVisual,
+                              uint16_t lightColorVisual, VisualTextColor darkLabelColor,
+                              VisualTextColor lightLabelColor);
 
 //--- Set display backlight state
 void displaySetBacklight(bool enabled);

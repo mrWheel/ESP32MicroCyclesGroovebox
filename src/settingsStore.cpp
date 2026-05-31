@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-31 - 10:59 ***/
+/*** Last Changed: 2026-05-31 - 12:29 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 
 #include "settingsStore.h"
@@ -1545,18 +1545,37 @@ static bool isValidPatternGroupName(const String& groupName)
 
 } //   isValidPatternGroupName()
 
-//-- Save pattern payload to one JSON file on SD card in /patterns/<GroupName>/pNN
+//-- Save pattern payload to one JSON file on SD card in /patterns/<groupName>/pNN.json.
 bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName,
                                     const PatternData& patternData)
 {
-  // groupName: validated pattern group name (max 8 chars, A-Z/0-9)
-  // patternName: pNN
+  String normalizedName = normalizePatternSlotName(patternName);
+  String groupDir;
+  String patternPath;
+  String legacyPatternPath;
+  String tempPatternPath;
+  JsonDocument jsonDocument;
+
   if (SD.cardType() == CARD_NONE)
   {
     ESP_LOGW(logTag, "SD card not available for pattern save");
     return false;
   }
-  String groupDir = String(sdPatternDirectoryPath) + "/" + groupName;
+
+  if (!isValidPatternGroupName(groupName))
+  {
+    ESP_LOGW(logTag, "Invalid pattern group name for save: %s", groupName.c_str());
+    return false;
+  }
+
+  if (normalizedName.isEmpty())
+  {
+    ESP_LOGW(logTag, "Invalid pattern name for save: %s", patternName.c_str());
+    return false;
+  }
+
+  groupDir = String(sdPatternDirectoryPath) + "/" + groupName;
+
   if (!SD.exists(groupDir))
   {
     if (!SD.mkdir(groupDir))
@@ -1565,39 +1584,58 @@ bool settingsStoreSavePatternToCard(const String& groupName, const String& patte
       return false;
     }
   }
-  String patternPath = groupDir + "/" + patternName;
-  String tempPatternPath = patternPath + patternTempFileSuffix;
-  JsonDocument jsonDocument;
-  buildPatternJsonDocument(patternName, patternData, jsonDocument);
+
+  patternPath = groupDir + "/" + normalizedName + ".json";
+  legacyPatternPath = groupDir + "/" + normalizedName;
+  tempPatternPath = patternPath + patternTempFileSuffix;
+
+  buildPatternJsonDocument(normalizedName, patternData, jsonDocument);
+
   if (SD.exists(tempPatternPath))
   {
     SD.remove(tempPatternPath);
   }
+
   File file = SD.open(tempPatternPath, FILE_WRITE);
+
   if (!file)
   {
     ESP_LOGW(logTag, "Failed to open SD %s for write", tempPatternPath.c_str());
     return false;
   }
+
   bool success = (serializeJson(jsonDocument, file) > 0);
+
   file.close();
+
   if (!success)
   {
     ESP_LOGW(logTag, "Failed to serialize SD %s", tempPatternPath.c_str());
     SD.remove(tempPatternPath);
     return false;
   }
+
   if (SD.exists(patternPath))
   {
     SD.remove(patternPath);
   }
+
   if (!SD.rename(tempPatternPath, patternPath))
   {
     ESP_LOGW(logTag, "Failed to rename SD %s to %s", tempPatternPath.c_str(), patternPath.c_str());
+
     SD.remove(tempPatternPath);
     return false;
   }
+
+  //-- Remove legacy extensionless file after successful .json save.
+  if (SD.exists(legacyPatternPath))
+  {
+    SD.remove(legacyPatternPath);
+  }
+
   return true;
+
 } //   settingsStoreSavePatternToCard()
 
 //-- List available pattern group names on SD card (subdirectories of /patterns)
@@ -2284,18 +2322,43 @@ bool settingsStoreDeletePattern(const String& patternName)
 
 } //   settingsStoreDeletePattern()
 
-//-- Delete one SD card pattern file (with group).
+//-- Delete one pattern from SD card group.
 bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName)
 {
-  String normalizedName = normalizePatternName(patternName);
-  String patternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName +
-                       patternFileExtension;
+  String normalizedName = normalizePatternSlotName(patternName);
+  String jsonPatternPath;
+  String legacyPatternPath;
+  bool removedAny = false;
 
-  if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
+  if (SD.cardType() == CARD_NONE)
   {
     return false;
   }
 
-  return SD.remove(patternPath);
+  if (!isValidPatternGroupName(groupName))
+  {
+    return false;
+  }
+
+  if (normalizedName.isEmpty())
+  {
+    return false;
+  }
+
+  jsonPatternPath =
+      String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName + ".json";
+  legacyPatternPath = String(sdPatternDirectoryPath) + "/" + groupName + "/" + normalizedName;
+
+  if (SD.exists(jsonPatternPath))
+  {
+    removedAny = SD.remove(jsonPatternPath) || removedAny;
+  }
+
+  if (SD.exists(legacyPatternPath))
+  {
+    removedAny = SD.remove(legacyPatternPath) || removedAny;
+  }
+
+  return removedAny;
 
 } //   settingsStoreDeletePatternFromCard()
