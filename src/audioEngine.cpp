@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-31 - 13:55 ***/
+/*** Last Changed: 2026-05-31 - 14:03 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -384,6 +384,95 @@ bool audioEngineIsOutputReady()
 
 } //   audioEngineIsOutputReady()
 
+//-- Return absolute int32 value without using floating point.
+static int32_t absInt32(int32_t value)
+{
+  if (value < 0)
+  {
+    return -value;
+  }
+
+  return value;
+
+} //   absInt32()
+
+//-- Estimate current voice loudness for voice stealing priority.
+static int32_t estimateVoiceLevel(const Voice& voice)
+{
+  if (!voice.active || voice.sampleData == nullptr || voice.position >= voice.frameCount)
+  {
+    return 0;
+  }
+
+  int32_t sampleValue = static_cast<int32_t>(voice.sampleData[voice.position]);
+  int32_t levelValue = absInt32(sampleValue);
+
+  levelValue = (levelValue * static_cast<int32_t>(voice.level)) / 255;
+
+  return levelValue;
+
+} //   estimateVoiceLevel()
+
+//-- Select best voice slot for new playback.
+static int selectVoiceForPlayback()
+{
+  int selectedVoice = -1;
+  int quietestVoice = -1;
+  int oldestVoice = 0;
+  int32_t quietestLevel = INT32_MAX;
+  uint32_t oldestPosition = 0;
+
+  //-- Prefer inactive voice.
+  for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
+  {
+    if (!voices[voiceIndex].active)
+    {
+      return voiceIndex;
+    }
+  }
+
+  //-- Prefer voice already in release fade.
+  for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
+  {
+    if (voices[voiceIndex].releaseActive)
+    {
+      return voiceIndex;
+    }
+  }
+
+  //-- Prefer quietest active voice.
+  for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
+  {
+    int32_t voiceLevel = estimateVoiceLevel(voices[voiceIndex]);
+
+    if (voiceLevel < quietestLevel)
+    {
+      quietestLevel = voiceLevel;
+      quietestVoice = voiceIndex;
+    }
+  }
+
+  if (quietestVoice >= 0 && quietestLevel < 512)
+  {
+    return quietestVoice;
+  }
+
+  //-- Fallback: steal oldest/most advanced voice.
+  for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
+  {
+    if (voices[voiceIndex].position >= oldestPosition)
+    {
+      oldestPosition = voices[voiceIndex].position;
+      oldestVoice = voiceIndex;
+    }
+  }
+
+  selectedVoice = oldestVoice;
+
+  return selectedVoice;
+
+} //   selectVoiceForPlayback()
+
 //-- Trigger sample playback with full voice params.
 void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, int8_t pan,
                               uint8_t chokeGroup)
@@ -410,31 +499,9 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
     return;
   }
 
-  //-- Start release fade for older voices in the same choke group.
-  releaseVoicesInChokeGroup(chokeGroup);
+  selectedVoice = selectVoiceForPlayback();
 
-  for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
-  {
-    if (!voices[voiceIndex].active)
-    {
-      selectedVoice = voiceIndex;
-      break;
-    }
-  }
-
-  if (selectedVoice < 0)
-  {
-    for (int voiceIndex = 0; voiceIndex < MAX_VOICES; voiceIndex++)
-    {
-      if (voices[voiceIndex].releaseActive)
-      {
-        selectedVoice = voiceIndex;
-        break;
-      }
-    }
-  }
-
-  if (selectedVoice < 0)
+  if (selectedVoice < 0 || selectedVoice >= MAX_VOICES)
   {
     selectedVoice = 0;
   }
