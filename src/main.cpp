@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-31 - 08:52 ***/
+/*** Last Changed: 2026-05-31 - 09:56 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -19,7 +19,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.6.13";
+const char* PROG_VERSION = "v0.6.14";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -91,8 +91,8 @@ static void bootStatusPush(const String& rawLine)
 #endif
 } //   bootStatusPush()
 
-//-- Prepare the display for boot status scrolling.
-static void bootStatusInit()
+//-- Prepare the display for boot status after SD initialization is complete.
+static void bootStatusInit(const RuntimeSettings& runtimeSettings)
 {
   for (int lineIndex = 0; lineIndex < bootStatusVisibleLines; lineIndex++)
   {
@@ -100,8 +100,12 @@ static void bootStatusInit()
   }
 
   displayInit();
+  displaySetRotation(static_cast<int>(runtimeSettings.displayRotation));
+  displaySetThemeColorIndex(runtimeSettings.themeColorIndex);
+
   bootStatusDisplayReady = true;
-  bootStatusDraw();
+
+  display.drawMessage("Groovebox", "Booting...");
 
 } //   bootStatusInit()
 
@@ -505,10 +509,12 @@ void setup()
   delay(100);
 
   Serial.printf("Booting ESP32 MicroCycles Groovebox (%s)\n", PROG_VERSION);
+
   ESP_LOGI(logTag, "Booting ESP32 MicroCycles Groovebox (%s)", PROG_VERSION);
   ESP_LOGI(logTag, "TFT pins: CS=%d DC=%d RST=%d BL=%d SCL=%d SDA=%d", PIN_TFT_CS, PIN_TFT_DC,
            PIN_TFT_RST, PIN_TFT_BL, PIN_TFT_SCL, PIN_TFT_SDA);
   ESP_LOGI(logTag, "I2S pins: BCLK=%d WS=%d DOUT=%d", PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT);
+
   logPinConflictWarnings();
 
 #ifdef SD_SMOKE_TEST
@@ -521,18 +527,28 @@ void setup()
            "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");
 #endif
 
-  inputQueue =
-      xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
-
+  //-- SD/sample init must remain the first hardware init on the shared SPI bus.
   if (!sampleManagerInit())
   {
     ESP_LOGW(logTag, "Sample manager init failed, using fallback waveforms");
   }
 
-  input.begin();
+  //-- Runtime settings are intentionally loaded after SD init for SPI stability.
+  settingsStoreLoadRuntimeSettings(runtimeSettings);
 
-  //-- Keep SD initialization first on shared SPI bus for reliable SD mount.
-  bootStatusInit();
+  inputQueue =
+      xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
+
+  input.begin();
+  input.setEncoderDirectionReversed(runtimeSettings.encoderDirectionReversed);
+
+  ESP_LOGI(logTag, "Loaded settings: rotation=%u theme=%d encoder=%s",
+           static_cast<unsigned>(runtimeSettings.displayRotation), runtimeSettings.themeColorIndex,
+           runtimeSettings.encoderDirectionReversed ? "B-A" : "A-B");
+
+  //-- Display init must stay after SD/sample init because TFT and SD share SPI.
+  bootStatusInit(runtimeSettings);
+
   bootStatusPush(String("Boot ") + PROG_VERSION);
   bootStatusPush(sampleManagerIsSdCardReady() ? "Sample manager ready" : "Sample init failed");
   bootStatusPush("Input ready");
