@@ -1,6 +1,5 @@
-/*** Last Changed: 2026-06-01 - 14:10 ***/
+/*** Last Changed: 2026-06-01 - 13:45 ***/
 #include "uiManager.h"
-#include "uiPatternGroupInput.h"
 
 #include "DisplayDriverClass.h"
 #include "audioEngine.h"
@@ -21,6 +20,10 @@ static const char* logTag = "UiManager";
 
 //-- UI refresh cadence.
 static const uint32_t uiRefreshIntervalMs = 50;
+
+//-- Pattern group name input configuration.
+static const char* patternGroupNameInputTokens = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+static const int patternGroupNameInputLength = 8;
 
 //-- Contextual step parameter pages.
 enum ParameterPage : uint8_t
@@ -114,6 +117,12 @@ struct UiState
   int sampleSetCount;
   String sampleSetNames[sampleSetListMaxEntries];
   String sampleSetDisplayItems[sampleSetListMaxEntries];
+  bool patternGroupNameInputOpen;
+  bool patternGroupNameInputCopyMode;
+  int patternGroupNameInputCursor;
+  int patternGroupNameInputTokenIndex;
+  char patternGroupNameInputValue[9];
+  bool patternGroupNameInputDrawn;
 };
 
 //-- Runtime state.
@@ -943,24 +952,180 @@ static void drawBusyPopupNow(const String& title, const String& message)
 } //   drawBusyPopupNow()
 
 //-- Build visible pattern group input text with cursor marker.
+static String buildPatternGroupNameInputText()
+{
+  String outputText = "";
+
+  for (int charIndex = 0; charIndex < patternGroupNameInputLength; charIndex++)
+  {
+    char currentChar = uiState.patternGroupNameInputValue[charIndex];
+
+    if (currentChar == '\0' || currentChar == ' ')
+    {
+      currentChar = '-';
+    }
+
+    if (charIndex == uiState.patternGroupNameInputCursor)
+    {
+      outputText += "[";
+      outputText += currentChar;
+      outputText += "]";
+    }
+    else
+    {
+      outputText += currentChar;
+    }
+  }
+
+  return outputText;
+
+} //   buildPatternGroupNameInputText()
+
 //-- Return trimmed pattern group name input.
+static String getTrimmedPatternGroupNameInput()
+{
+  String groupName = "";
+
+  for (int charIndex = 0; charIndex < patternGroupNameInputLength; charIndex++)
+  {
+    char currentChar = uiState.patternGroupNameInputValue[charIndex];
+
+    if (currentChar != '\0' && currentChar != ' ')
+    {
+      groupName += currentChar;
+    }
+  }
+
+  groupName.trim();
+
+  return groupName;
+
+} //   getTrimmedPatternGroupNameInput()
+
 //-- Open pattern group name input for Rename or Copy.
+static void openPatternGroupNameInput(bool copyMode)
+{
+  for (int charIndex = 0; charIndex < patternGroupNameInputLength; charIndex++)
+  {
+    uiState.patternGroupNameInputValue[charIndex] = ' ';
+  }
+
+  uiState.patternGroupNameInputValue[patternGroupNameInputLength] = '\0';
+  uiState.patternGroupNameInputOpen = true;
+  uiState.patternGroupNameInputCopyMode = copyMode;
+  uiState.patternGroupNameInputCursor = 0;
+  uiState.patternGroupNameInputTokenIndex = 0;
+  uiState.patternGroupNameInputDrawn = false;
+  uiState.dirty = true;
+
+} //   openPatternGroupNameInput()
+
 //-- Draw or partially update pattern group name input popup.
+static void drawPatternGroupNameInput()
+{
+  String lines[6];
+  String sourceGroupName = settingsStoreGetActivePatternGroup();
+  String inputText = buildPatternGroupNameInputText();
+  String tokenText =
+      "Turn=" + String(patternGroupNameInputTokens[uiState.patternGroupNameInputTokenIndex]);
+  const char* title = uiState.patternGroupNameInputCopyMode ? "Copy Pattern" : "Rename Pattern";
+
+  if (!uiState.patternGroupNameInputDrawn)
+  {
+    lines[0] = uiState.patternGroupNameInputCopyMode ? "Copy:" : "Rename:";
+    lines[1] = sourceGroupName;
+    lines[2] = "To:";
+    lines[3] = inputText;
+    lines[4] = tokenText;
+    lines[5] = uiState.patternGroupNameInputCopyMode ? "Hold=Copy K0=Back" : "Hold=Rename K0=Back";
+
+    display.drawSelectionOverlay(title, lines, 6, -1);
+
+    uiState.patternGroupNameInputDrawn = true;
+  }
+  else
+  {
+    display.updateSelectionOverlayRow(3, inputText);
+    display.updateSelectionOverlayRow(4, tokenText);
+  }
+
+} //   drawPatternGroupNameInput()
+
 //-- Rotate current pattern group input character.
+static void rotatePatternGroupNameInput(int delta)
+{
+  int tokenCount = static_cast<int>(strlen(patternGroupNameInputTokens));
+
+  if (tokenCount <= 0)
+  {
+    return;
+  }
+
+  uiState.patternGroupNameInputTokenIndex += delta;
+
+  while (uiState.patternGroupNameInputTokenIndex < 0)
+  {
+    uiState.patternGroupNameInputTokenIndex += tokenCount;
+  }
+
+  while (uiState.patternGroupNameInputTokenIndex >= tokenCount)
+  {
+    uiState.patternGroupNameInputTokenIndex -= tokenCount;
+  }
+
+  uiState.patternGroupNameInputValue[uiState.patternGroupNameInputCursor] =
+      patternGroupNameInputTokens[uiState.patternGroupNameInputTokenIndex];
+
+  uiState.dirty = true;
+
+} //   rotatePatternGroupNameInput()
+
 //-- Accept current character and advance cursor.
+static void acceptPatternGroupNameInputCharacter()
+{
+  uiState.patternGroupNameInputValue[uiState.patternGroupNameInputCursor] =
+      patternGroupNameInputTokens[uiState.patternGroupNameInputTokenIndex];
+
+  if (uiState.patternGroupNameInputCursor < patternGroupNameInputLength - 1)
+  {
+    uiState.patternGroupNameInputCursor++;
+  }
+
+  uiState.dirty = true;
+
+} //   acceptPatternGroupNameInputCharacter()
+
 //-- Backspace or cancel pattern group name input.
-//-- Commit Rename or Copy pattern group input.
+static void backspacePatternGroupNameInput()
+{
+  if (uiState.patternGroupNameInputCursor <= 0)
+  {
+    uiState.patternGroupNameInputOpen = false;
+    uiState.patternGroupNameInputDrawn = false;
+    uiState.dirty = true;
+    return;
+  }
+
+  uiState.patternGroupNameInputValue[uiState.patternGroupNameInputCursor] = ' ';
+  uiState.patternGroupNameInputCursor--;
+  uiState.patternGroupNameInputValue[uiState.patternGroupNameInputCursor] = ' ';
+
+  uiState.dirty = true;
+
+} //   backspacePatternGroupNameInput()
+
 //-- Commit Rename or Copy pattern group input.
 static void commitPatternGroupNameInput()
 {
   String oldGroupName = settingsStoreGetActivePatternGroup();
-  String newGroupName = uiPatternGroupInputGetTrimmedName();
-  bool copyMode = uiPatternGroupInputIsCopyMode();
+  String newGroupName = getTrimmedPatternGroupNameInput();
+  bool copyMode = uiState.patternGroupNameInputCopyMode;
   bool success = false;
 
   if (newGroupName.isEmpty())
   {
-    uiPatternGroupInputClose();
+    uiState.patternGroupNameInputOpen = false;
+    uiState.patternGroupNameInputDrawn = false;
     showPatternStatus("Name empty", 2000);
     uiState.dirty = true;
 
@@ -968,8 +1133,8 @@ static void commitPatternGroupNameInput()
   }
 
   //-- Close input first so the busy popup can be drawn before the SD action starts.
-  uiPatternGroupInputClose();
-
+  uiState.patternGroupNameInputOpen = false;
+  uiState.patternGroupNameInputDrawn = false;
   uiState.patternStatusOpen = false;
   uiState.patternStatusText = "";
   uiState.dirty = true;
@@ -2344,7 +2509,16 @@ void uiManagerInit()
   uiState.cardStorageMenuOpen = false;
   uiState.cardStorageMenuSelection = 0;
   uiState.cardStorageMenuFirstVisibleIndex = 0;
-  uiPatternGroupInputInit();
+  uiState.patternGroupNameInputOpen = false;
+  uiState.patternGroupNameInputCopyMode = false;
+  uiState.patternGroupNameInputCursor = 0;
+  uiState.patternGroupNameInputTokenIndex = 0;
+  uiState.patternGroupNameInputDrawn = false;
+
+  for (int charIndex = 0; charIndex <= patternGroupNameInputLength; charIndex++)
+  {
+    uiState.patternGroupNameInputValue[charIndex] = '\0';
+  }
 
   lastSequencerStep = 0xFF;
   lastSequencerCursor = 0xFF;
@@ -2491,9 +2665,9 @@ void uiManagerUpdate()
   {
     sequencerScreenDrawn = false;
 
-    if (uiPatternGroupInputIsOpen())
+    if (uiState.patternGroupNameInputOpen)
     {
-      uiPatternGroupInputDraw(settingsStoreGetActivePatternGroup());
+      drawPatternGroupNameInput();
     }
     else
     {
@@ -2523,19 +2697,19 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   {
     return;
   }
-  if (uiPatternGroupInputIsOpen())
+  if (uiState.patternGroupNameInputOpen)
   {
     if (encoderEvent == ENCODER_EVENT_LEFT)
     {
-      uiPatternGroupInputRotate(-1);
+      rotatePatternGroupNameInput(-1);
     }
     else if (encoderEvent == ENCODER_EVENT_RIGHT)
     {
-      uiPatternGroupInputRotate(1);
+      rotatePatternGroupNameInput(1);
     }
     else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS)
     {
-      uiPatternGroupInputAcceptCharacter();
+      acceptPatternGroupNameInputCharacter();
     }
     else if (encoderEvent == ENCODER_EVENT_MEDIUM_PRESS || encoderEvent == ENCODER_EVENT_LONG_PRESS)
     {
@@ -2671,13 +2845,11 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
         }
         else if (uiState.cardStorageMenuSelection == 2)
         {
-          uiPatternGroupInputOpen(false);
-          uiState.dirty = true;
+          openPatternGroupNameInput(false);
         }
         else if (uiState.cardStorageMenuSelection == 3)
         {
-          uiPatternGroupInputOpen(true);
-          uiState.dirty = true;
+          openPatternGroupNameInput(true);
         }
         else if (uiState.cardStorageMenuSelection == 4)
         {
@@ -3128,15 +3300,15 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
   {
     return;
   }
-  if (uiPatternGroupInputIsOpen())
+  if (uiState.patternGroupNameInputOpen)
   {
     if (buttonEvent == BUTTON_EVENT_SHORT_PRESS)
     {
-      uiPatternGroupInputBackspaceOrCancel();
+      backspacePatternGroupNameInput();
     }
     else if (buttonEvent == BUTTON_EVENT_MEDIUM_PRESS || buttonEvent == BUTTON_EVENT_LONG_PRESS)
     {
-      uiPatternGroupInputClose();
+      uiState.patternGroupNameInputOpen = false;
       uiState.dirty = true;
     }
 
