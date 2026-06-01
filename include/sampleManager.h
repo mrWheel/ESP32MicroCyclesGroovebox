@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-30 - 12:24 ***/
+/*** Last Changed: 2026-06-01 - 16:38 ***/
 #ifndef SAMPLE_MANAGER_H
 #define SAMPLE_MANAGER_H
 
@@ -44,7 +44,7 @@ bool sampleManagerSetActiveSampleSet(const char* setName);
 //-- Get the active sample set name (e.g., "S1").
 const char* sampleManagerGetActiveSampleSet();
 
-//-- Get per-sample gain percent for a given SampleId (loaded from sampleGainPercent.json).
+//-- Get per-sample gain percent for a given SampleId (loaded from setGain.json)
 uint16_t sampleManagerGetSampleGainPercent(SampleId sampleId);
 
 //-- Get sample slot by identifier.

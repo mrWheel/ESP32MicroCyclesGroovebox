@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-30 - 12:24 ***/
+/*** Last Changed: 2026-06-01 - 16:38 ***/
 #include "sampleManager.h"
 #include "appConfig.h"
 #include "settingsStore.h"
@@ -67,16 +67,19 @@ static void loadSampleGainPercent()
     sampleGainPercent[sampleIndex] = 100;
   }
 
-  String jsonPath = getSampleSetDir() + "sampleGainPercent.json";
+  String jsonPath = getSampleSetDir() + "setGain.json";
   File file = SD.open(jsonPath.c_str(), FILE_READ);
 
   if (!file)
   {
+    ESP_LOGW(logTag, "Warning: Could not open %s, using default sample gains", jsonPath.c_str());
+
     return;
   }
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, file);
+
   file.close();
 
   if (error)
@@ -89,16 +92,46 @@ static void loadSampleGainPercent()
 
   if (object.isNull())
   {
+    object = doc["setGain"];
+  }
+
+  if (object.isNull())
+  {
+    object = doc.as<JsonObject>();
+  }
+
+  if (object.isNull())
+  {
+    ESP_LOGW(logTag, "Warning: No sample gain object in %s", jsonPath.c_str());
     return;
   }
 
   for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
   {
-    if (object[sampleNames[sampleIndex]].is<uint16_t>())
+    if (object[sampleNames[sampleIndex]].is<int>())
     {
-      sampleGainPercent[sampleIndex] = object[sampleNames[sampleIndex]].as<uint16_t>();
+      int gainPercent = object[sampleNames[sampleIndex]].as<int>();
+
+      if (gainPercent < 0)
+      {
+        gainPercent = 0;
+      }
+      else if (gainPercent > 300)
+      {
+        gainPercent = 300;
+      }
+
+      sampleGainPercent[sampleIndex] = static_cast<uint16_t>(gainPercent);
     }
   }
+
+  ESP_LOGI(logTag, "Loaded sample gains from %s: kick=%u snare=%u ch=%u oh=%u tone=%u metal=%u",
+           jsonPath.c_str(), static_cast<unsigned>(sampleGainPercent[sampleKick]),
+           static_cast<unsigned>(sampleGainPercent[sampleSnare]),
+           static_cast<unsigned>(sampleGainPercent[sampleClosedHat]),
+           static_cast<unsigned>(sampleGainPercent[sampleOpenHat]),
+           static_cast<unsigned>(sampleGainPercent[sampleTone]),
+           static_cast<unsigned>(sampleGainPercent[sampleMetal]));
 
 } //   loadSampleGainPercent()
 
@@ -734,13 +767,7 @@ bool sampleManagerInit()
   {
     ESP_LOGW(logTag, "Warning: SD unavailable, all tracks use fallback waveforms");
   }
-  else
-  {
-    ESP_LOGI(logTag, "SD root listing before sample load:");
-    logSdDirectoryRecursive("/", 1);
-    loadSampleGainPercent();
-  }
-  //----
+
   String storedSampleSet = settingsStoreGetActiveSampleSet();
 
   if (storedSampleSet.length() == 2)
@@ -749,8 +776,16 @@ bool sampleManagerInit()
   }
 
   ESP_LOGI(logTag, "Active sample set: %s", activeSampleSet);
-  //----
 
+  if (sdCardReady)
+  {
+#ifdef SD_VERBOSE_DIRECTORY_LISTING
+    ESP_LOGI(logTag, "SD root listing before sample load:");
+    logSdDirectoryRecursive("/", 1);
+#endif
+
+    loadSampleGainPercent();
+  }
   String sampleSetDir = getSampleSetDir();
 
   for (uint8_t sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
