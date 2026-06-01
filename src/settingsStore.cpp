@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 12:33 ***/
+/*** Last Changed: 2026-06-01 - 13:28 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 
 #include "settingsStore.h"
@@ -187,9 +187,6 @@ static const char* logTag = "SettingsStore";
 
 //-- Settings and pattern paths.
 static const char* settingsPath = "/settings.json";
-static const char* patternDirectoryPath = "/patterns";
-static const char* patternFileExtension =
-    ""; // No extension for user-facing, but keep for compatibility if needed
 static const char* patternTempFileSuffix = ".tmp";
 static const size_t patternSaveReserveBytes = 512;
 static const char* trackJsonNames[sequencerTrackCount] = {"KICK", "SNARE", "CH",
@@ -206,20 +203,11 @@ static bool ensureSettingsFsMounted();
 //-- Validate mounted LittleFS before any write/read operations.
 static bool isSettingsFsUsable();
 
-//-- Check whether LittleFS has enough free space for a safe pattern save.
-static bool hasEnoughSpaceForPatternSave(size_t requiredBytes);
-
 //-- Validate strict pattern naming format: <LETTER><DIGIT><DIGIT>.
 static bool isPatternNameLetterNumberFormat(const String& patternName);
 
 //-- Normalize one letter token to uppercase A..Z.
 static char normalizePatternLetter(char patternLetter);
-
-//-- Check whether a path exists inside /patterns without noisy VFS errors.
-static bool patternPathExists(const String& fullPath);
-
-//-- Check whether a path exists inside /patterns on SD card.
-static bool sdPatternPathExists(const String& fullPath);
 
 //-- Build one pattern JSON document without changing schema.
 static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData,
@@ -235,10 +223,6 @@ static String normalizeStrictPatternToken(const String& patternName);
 //-- Read chain settings from JSON document with backward-compatible keys.
 static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled,
                                       uint8_t& outLength, String& outTarget);
-
-//-- Write chain settings into JSON document while preserving unrelated fields.
-static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length,
-                                     const String& target);
 
 //-- Build safe pattern base name.
 static String normalizePatternName(const String& patternName)
@@ -307,76 +291,6 @@ static String normalizePatternSlotName(const String& patternName)
   return normalizedName;
 
 } //   normalizePatternSlotName()
-
-//-- Ensure pattern directory exists.
-static bool ensurePatternDirectory()
-{
-  if (!ensureSettingsFsMounted())
-  {
-    return false;
-  }
-
-  if (LittleFS.exists(patternDirectoryPath))
-  {
-    File patternPathEntry = LittleFS.open(patternDirectoryPath, "r");
-
-    if (patternPathEntry && patternPathEntry.isDirectory())
-    {
-      patternPathEntry.close();
-      return true;
-    }
-
-    patternPathEntry.close();
-
-    ESP_LOGW(logTag, "%s exists but is not a directory; removing", patternDirectoryPath);
-
-    if (!LittleFS.remove(patternDirectoryPath))
-    {
-      ESP_LOGW(logTag, "Failed to remove conflicting file %s", patternDirectoryPath);
-      return false;
-    }
-  }
-
-  if (!LittleFS.mkdir(patternDirectoryPath))
-  {
-    File patternPathEntry = LittleFS.open(patternDirectoryPath, "r");
-    bool directoryExists = (patternPathEntry && patternPathEntry.isDirectory());
-
-    if (patternPathEntry)
-    {
-      patternPathEntry.close();
-    }
-
-    if (directoryExists)
-    {
-      return true;
-    }
-
-    ESP_LOGW(logTag, "Failed to create %s", patternDirectoryPath);
-    return false;
-  }
-
-  return true;
-
-} //   ensurePatternDirectory()
-
-//-- Build full pattern file path for Local (LittleFS): /patterns/pNN
-static String buildPatternPath(const String& patternName)
-{
-  // Enforce pNN naming (p01..p99)
-  String normalizedName = patternName;
-  if (normalizedName.length() == 3 && normalizedName[0] == 'p' && isDigit(normalizedName[1]) &&
-      isDigit(normalizedName[2]))
-  {
-    // OK
-  }
-  else
-  {
-    // fallback: always use pNN, default to p01
-    normalizedName = "p01";
-  }
-  return String(patternDirectoryPath) + "/" + normalizedName;
-} //   buildPatternPath()
 
 //-- Extract pattern name from absolute file path (expects /patterns/pNN)
 static String patternNameFromPath(const String& fullPath)
@@ -460,27 +374,6 @@ static bool isSettingsFsUsable()
 
 } //   isSettingsFsUsable()
 
-//-- Require requested bytes plus reserve margin to avoid allocator edge-cases.
-static bool hasEnoughSpaceForPatternSave(size_t requiredBytes)
-{
-  size_t totalBytes;
-  size_t usedBytes;
-  size_t freeBytes;
-
-  totalBytes = LittleFS.totalBytes();
-  usedBytes = LittleFS.usedBytes();
-
-  if (totalBytes == 0 || usedBytes > totalBytes)
-  {
-    return true;
-  }
-
-  freeBytes = totalBytes - usedBytes;
-
-  return freeBytes > (requiredBytes + patternSaveReserveBytes);
-
-} //   hasEnoughSpaceForPatternSave()
-
 //-- Validate strict pattern naming format: <LETTER><DIGIT><DIGIT>.
 static bool isPatternNameLetterNumberFormat(const String& patternName)
 {
@@ -518,55 +411,6 @@ static char normalizePatternLetter(char patternLetter)
   return patternLetter;
 
 } //   normalizePatternLetter()
-
-//-- Check whether a path exists inside /patterns without noisy VFS errors.
-static bool patternPathExists(const String& fullPath)
-{
-  File directory;
-  File entry;
-  String fileNameToFind;
-
-  int slashIndex = fullPath.lastIndexOf('/');
-  fileNameToFind = (slashIndex >= 0) ? fullPath.substring(slashIndex + 1) : fullPath;
-
-  if (!ensurePatternDirectory())
-  {
-    return false;
-  }
-
-  directory = LittleFS.open(patternDirectoryPath, "r");
-
-  if (!directory)
-  {
-    return false;
-  }
-
-  entry = directory.openNextFile();
-
-  while (entry)
-  {
-    String entryPath = String(entry.name());
-    int entrySlashIndex = entryPath.lastIndexOf('/');
-    String entryFileName =
-        (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
-
-    entry.close();
-
-    if (entryPath == fullPath ||
-        entryPath == (String(patternDirectoryPath) + "/" + fileNameToFind) ||
-        entryFileName == fileNameToFind)
-    {
-      directory.close();
-      return true;
-    }
-
-    entry = directory.openNextFile();
-  }
-
-  directory.close();
-  return false;
-
-} //   patternPathExists()
 
 //-- Check whether a path exists inside /patterns on SD card.
 static bool sdPatternPathExists(const String& fullPath)
@@ -793,25 +637,6 @@ static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternDa
 
 } //   parsePatternJsonDocument()
 
-//-- Normalize strict pattern token to uppercase <LETTER><DIGIT><DIGIT>.
-static String normalizeStrictPatternToken(const String& patternName)
-{
-  char normalized[4];
-
-  if (!isPatternNameLetterNumberFormat(patternName))
-  {
-    return "";
-  }
-
-  normalized[0] = normalizePatternLetter(patternName[0]);
-  normalized[1] = patternName[1];
-  normalized[2] = patternName[2];
-  normalized[3] = '\0';
-
-  return String(normalized);
-
-} //   normalizeStrictPatternToken()
-
 //-- Read chain settings from JSON document with backward-compatible keys.
 static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled,
                                       uint8_t& outLength, String& outTarget)
@@ -866,11 +691,11 @@ static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, u
 
 } //   writeChainSettingsToJson()
 
-//-- Return LittleFS usage values in bytes.
-bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes,
+//-- Report LittleFS usage without creating legacy pattern directories.
+bool settingsStoreGetLittleFsUsage(size_t& outUsedBytes, size_t& outTotalBytes,
                                    size_t& outFreeBytes)
 {
-  if (!ensurePatternDirectory())
+  if (!ensureSettingsFsMounted())
   {
     return false;
   }
@@ -878,12 +703,14 @@ bool settingsStoreGetLittleFsUsage(size_t& outTotalBytes, size_t& outUsedBytes,
   outTotalBytes = LittleFS.totalBytes();
   outUsedBytes = LittleFS.usedBytes();
 
-  if (outUsedBytes > outTotalBytes)
+  if (outTotalBytes >= outUsedBytes)
   {
-    outUsedBytes = outTotalBytes;
+    outFreeBytes = outTotalBytes - outUsedBytes;
   }
-
-  outFreeBytes = outTotalBytes - outUsedBytes;
+  else
+  {
+    outFreeBytes = 0;
+  }
 
   return true;
 
@@ -1068,72 +895,6 @@ bool settingsStoreFindNextPatternNameForLetterOnCard(char patternLetter, String&
   return false;
 
 } //   settingsStoreFindNextPatternNameForLetterOnCard()
-
-//-- Count remaining free pattern slots for one letter group (0..99).
-bool settingsStoreCountAvailablePatternSlotsForLetter(char patternLetter, int& outFreeCount)
-{
-  char normalizedLetter;
-  int usedCount = 0;
-
-  outFreeCount = 0;
-
-  if (!ensurePatternDirectory())
-  {
-    return false;
-  }
-
-  normalizedLetter = normalizePatternLetter(patternLetter);
-
-  if (normalizedLetter < 'A' || normalizedLetter > 'Z')
-  {
-    return false;
-  }
-
-  File directory = LittleFS.open(patternDirectoryPath, "r");
-
-  if (!directory)
-  {
-    return false;
-  }
-
-  File entry = directory.openNextFile();
-
-  while (entry)
-  {
-    if (!entry.isDirectory())
-    {
-      String patternName = patternNameFromPath(entry.name());
-
-      if (isPatternNameLetterNumberFormat(patternName))
-      {
-        char entryLetter = normalizePatternLetter(patternName[0]);
-
-        if (entryLetter == normalizedLetter)
-        {
-          usedCount++;
-        }
-      }
-    }
-
-    entry.close();
-    entry = directory.openNextFile();
-  }
-
-  directory.close();
-
-  if (usedCount < 0)
-  {
-    usedCount = 0;
-  }
-  else if (usedCount > 99)
-  {
-    usedCount = 99;
-  }
-
-  outFreeCount = 99 - usedCount;
-  return true;
-
-} //   settingsStoreCountAvailablePatternSlotsForLetter()
 
 //-- Count remaining free SD pattern slots for one letter group (0..99).
 bool settingsStoreCountAvailablePatternSlotsForLetterOnCard(char patternLetter, int& outFreeCount)
@@ -1682,52 +1443,6 @@ bool settingsStoreLoadPatternFromCard(const String& groupName, const String& pat
   return true;
 
 } //   settingsStoreLoadPatternFromCard()
-
-//-- Load chain settings from one existing SD card pattern JSON file.
-bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled,
-                                                   uint8_t& outLength, String& outTarget)
-{
-  String normalizedName;
-  String patternPath;
-  JsonDocument jsonDocument;
-
-  outEnabled = false;
-  outLength = 1;
-  outTarget = "";
-
-  normalizedName = normalizeStrictPatternToken(patternName);
-
-  if (normalizedName.isEmpty())
-  {
-    return false;
-  }
-
-  patternPath = String(sdPatternDirectoryPath) + "/" + normalizedName + patternFileExtension;
-
-  if (SD.cardType() == CARD_NONE || !sdPatternPathExists(patternPath))
-  {
-    return false;
-  }
-
-  File file = SD.open(patternPath, FILE_READ);
-
-  if (!file)
-  {
-    return false;
-  }
-
-  DeserializationError error = deserializeJson(jsonDocument, file);
-  file.close();
-
-  if (error)
-  {
-    return false;
-  }
-
-  readChainSettingsFromJson(jsonDocument, outEnabled, outLength, outTarget);
-  return true;
-
-} //   settingsStoreLoadPatternChainSettingsFromCard()
 
 //-- Delete one pattern from SD card group.
 bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName)

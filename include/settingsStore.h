@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 12:33 ***/
+/*** Last Changed: 2026-06-01 - 13:28 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 #ifndef SETTINGS_STORE_H
 #define SETTINGS_STORE_H
@@ -48,11 +48,11 @@ struct RuntimeSettings
   String activePatternName;
 };
 
-enum class PatternStorageTarget : uint8_t
-{
-  Local = 0,
-  Card = 1
-};
+//--cleanup--enum class PatternStorageTarget : uint8_t
+//--cleanup--{
+//--cleanup--  Local = 0,
+//--cleanup--  Card = 1
+//--cleanup--};
 
 //-- Load persisted display rotation.
 uint8_t settingsStoreLoadDisplayRotation();
@@ -65,9 +65,6 @@ bool settingsStoreSaveRuntimeSettings(const RuntimeSettings& settings);
 
 //-- Return SD usage values in bytes.
 bool settingsStoreGetSdUsage(size_t& outTotalBytes, size_t& outUsedBytes, size_t& outFreeBytes);
-
-//-- Save pattern payload to LittleFS.
-bool settingsStoreSavePattern(const String& patternName, const PatternData& patternData);
 
 //-- Save pattern payload to SD card (with group).
 bool settingsStoreSavePatternToCard(const String& groupName, const String& patternName,
@@ -88,23 +85,9 @@ bool settingsStoreRenamePatternGroupOnCard(const String& oldGroupName, const Str
 bool settingsStoreCopyPatternGroupOnCard(const String& sourceGroupName,
                                          const String& targetGroupName);
 
-//-- Load pattern payload from LittleFS.
-bool settingsStoreLoadPattern(const String& patternName, PatternData& patternData);
-
 //-- Load chain settings from one existing pattern JSON file.
 bool settingsStoreLoadPatternChainSettings(const String& patternName, bool& outEnabled,
                                            uint8_t& outLength, String& outTarget);
-
-//-- Load chain settings from one existing SD card pattern JSON file.
-bool settingsStoreLoadPatternChainSettingsFromCard(const String& patternName, bool& outEnabled,
-                                                   uint8_t& outLength, String& outTarget);
-
-//-- Update only chain settings in one existing pattern JSON file.
-bool settingsStoreSavePatternChainSettings(const String& patternName, bool chainEnabled,
-                                           uint8_t chainLength, const String& chainTarget);
-
-//-- Delete one pattern file.
-bool settingsStoreDeletePattern(const String& patternName);
 
 //-- Delete one SD card pattern file (with group).
 bool settingsStoreDeletePatternFromCard(const String& groupName, const String& patternName);

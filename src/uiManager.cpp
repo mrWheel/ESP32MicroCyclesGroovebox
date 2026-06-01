@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 12:33 ***/
+/*** Last Changed: 2026-06-01 - 13:28 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -182,28 +182,6 @@ static void flushPendingChainSettings();
 static bool loadCardPatternGroupIntoMemory(const String& groupName, bool showStatus);
 
 //-- Rotate selected New Pattern letter in full A..Z range.
-
-//-- Format free-byte value as B, KB or MB depending on magnitude.
-static String formatBytesAdaptive(size_t bytes)
-{
-  char buffer[32];
-
-  if (bytes > (1024U * 1024U))
-  {
-    snprintf(buffer, sizeof(buffer), "%lu MB", static_cast<unsigned long>(bytes / (1024U * 1024U)));
-  }
-  else if (bytes > 1024U)
-  {
-    snprintf(buffer, sizeof(buffer), "%lu KB", static_cast<unsigned long>(bytes / 1024U));
-  }
-  else
-  {
-    snprintf(buffer, sizeof(buffer), "%lu B", static_cast<unsigned long>(bytes));
-  }
-
-  return String(buffer);
-
-} //   formatBytesAdaptive()
 
 //-- Return pattern name for a loaded pattern slot.
 static String getPatternNameForSlot(uint8_t slotIndex)
@@ -408,32 +386,6 @@ static bool areAllLoadedPatternsIncludedInPlaybackChain()
   return visitedCount == loadedPatternCount;
 
 } //   areAllLoadedPatternsIncludedInPlaybackChain()
-
-//-- Resolve storage target directly from pattern letter: A-H Local, I-Z Card.
-static PatternStorageTarget storageTargetFromPatternLetter(char patternLetter)
-{
-  char normalizedLetter = static_cast<char>(toupper(static_cast<unsigned char>(patternLetter)));
-
-  if (normalizedLetter >= 'I' && normalizedLetter <= 'Z')
-  {
-    return PatternStorageTarget::Card;
-  }
-
-  return PatternStorageTarget::Local;
-
-} //   storageTargetFromPatternLetter()
-
-//-- Resolve storage target from full pattern name.
-static PatternStorageTarget storageTargetFromPatternName(const String& patternName)
-{
-  if (patternName.length() > 0)
-  {
-    return storageTargetFromPatternLetter(patternName[0]);
-  }
-
-  return PatternStorageTarget::Local;
-
-} //   storageTargetFromPatternName()
 
 //-- Map current parameter page to popup selection index.
 static int popupSelectionFromParameterPage(uint8_t parameterPage)
@@ -1462,17 +1414,12 @@ static void refreshPatternList()
 } //   refreshPatternList()
 
 //-- Save current active RAM pattern to the active Card pattern group.
-static bool saveActivePattern(PatternStorageTarget* outStorageTarget = nullptr)
+static bool saveActivePattern()
 {
   PatternData patternData;
   SequencerView view;
   String groupName = settingsStoreGetActivePatternGroup();
   String targetName;
-
-  if (outStorageTarget != nullptr)
-  {
-    *outStorageTarget = PatternStorageTarget::Card;
-  }
 
   if (groupName.isEmpty())
   {
@@ -2407,17 +2354,16 @@ static void drawSystemSettingsScreen()
 
     int itemCount = uiState.patternCount;
     bool activeMarked = false;
-    const char* title = (uiState.patternListSourceFilter == patternListModeCardGroups)
-                            ? "Load Pattern"
-                            : (uiState.patternDeleteMode
-                                   ? "Delete Pattern"
-                                   : (uiState.patternListSourceFilter ==
-                                              static_cast<int>(PatternStorageTarget::Card)
-                                          ? "Load from Card"
-                                          : (uiState.patternListSourceFilter ==
-                                                     static_cast<int>(PatternStorageTarget::Local)
-                                                 ? "Load from Local"
-                                                 : "Load Pattern")));
+    const char* title;
+
+    if (uiState.patternDeleteMode)
+    {
+      title = "Delete Pattern";
+    }
+    else
+    {
+      title = "Load Pattern";
+    }
 
     if (itemCount <= 0)
     {
