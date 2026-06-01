@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 13:28 ***/
+/*** Last Changed: 2026-06-01 - 13:45 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -19,7 +19,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v0.7.5";
+const char* PROG_VERSION = "v0.7.6";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -47,6 +47,7 @@ static const int bootStatusVisibleLines = 9;
 static String bootStatusLines[bootStatusVisibleLines];
 static bool bootStatusDisplayReady = false;
 
+#ifdef DISPLAY_DEBUG_INFO
 //-- Draw the current boot status line buffer.
 static void bootStatusDraw()
 {
@@ -54,9 +55,7 @@ static void bootStatusDraw()
   {
     return;
   }
-#ifdef DISPLAY_DEBUG_INFO
   display.drawListScreen("Startup", bootStatusLines, bootStatusVisibleLines, -1, 0, PROG_VERSION);
-#endif
 } //   bootStatusDraw()
 
 //-- Keep only the tail of long lines so right edge remains visible.
@@ -72,6 +71,7 @@ static String compactBootStatusLine(const String& line)
   return String("...") + line.substring(line.length() - (maxChars - 3));
 
 } //   compactBootStatusLine()
+#endif
 
 //-- Append one startup status line at the bottom and scroll older lines upward.
 static void bootStatusPush(const String& rawLine)
@@ -179,14 +179,6 @@ static void logFilesystemDirectoryRecursive(fs::FS& filesystem, const char* file
   directory.close();
 
 } //   logFilesystemDirectoryRecursive()
-
-//-- Log filesystem root and all nested entries.
-static void logFilesystemRoot(fs::FS& filesystem, const char* filesystemName)
-{
-  ESP_LOGI(logTag, "%s root listing:", filesystemName);
-  logFilesystemDirectoryRecursive(filesystem, filesystemName, "/", 1);
-
-} //   logFilesystemRoot()
 
 //-- Show recursive filesystem listing on the startup display.
 static void displayFilesystemDirectoryRecursive(fs::FS& filesystem, const char* directoryPath)

@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 13:28 ***/
+/*** Last Changed: 2026-06-01 - 13:45 ***/
 /*** Last Changed: 2026-05-27 - 17:20 ***/
 
 #include "settingsStore.h"
@@ -217,9 +217,6 @@ static void buildPatternJsonDocument(const String& normalizedName, const Pattern
 static bool parsePatternJsonDocument(const JsonDocument& jsonDocument, PatternData& patternData,
                                      const String& sourcePath);
 
-//-- Normalize strict pattern token to uppercase <LETTER><DIGIT><DIGIT>.
-static String normalizeStrictPatternToken(const String& patternName);
-
 //-- Read chain settings from JSON document with backward-compatible keys.
 static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& outEnabled,
                                       uint8_t& outLength, String& outTarget);
@@ -411,51 +408,6 @@ static char normalizePatternLetter(char patternLetter)
   return patternLetter;
 
 } //   normalizePatternLetter()
-
-//-- Check whether a path exists inside /patterns on SD card.
-static bool sdPatternPathExists(const String& fullPath)
-{
-  File directory;
-  File entry;
-  String fileNameToFind;
-
-  int slashIndex = fullPath.lastIndexOf('/');
-  fileNameToFind = (slashIndex >= 0) ? fullPath.substring(slashIndex + 1) : fullPath;
-
-  directory = SD.open(sdPatternDirectoryPath, FILE_READ);
-
-  if (!directory || !directory.isDirectory())
-  {
-    directory.close();
-    return false;
-  }
-
-  entry = directory.openNextFile();
-
-  while (entry)
-  {
-    String entryPath = String(entry.name());
-    int entrySlashIndex = entryPath.lastIndexOf('/');
-    String entryFileName =
-        (entrySlashIndex >= 0) ? entryPath.substring(entrySlashIndex + 1) : entryPath;
-
-    entry.close();
-
-    if (entryPath == fullPath ||
-        entryPath == (String(sdPatternDirectoryPath) + "/" + fileNameToFind) ||
-        entryFileName == fileNameToFind)
-    {
-      directory.close();
-      return true;
-    }
-
-    entry = directory.openNextFile();
-  }
-
-  directory.close();
-  return false;
-
-} //   sdPatternPathExists()
 
 //-- Build one pattern JSON document without changing schema.
 static void buildPatternJsonDocument(const String& normalizedName, const PatternData& patternData,
@@ -673,23 +625,6 @@ static void readChainSettingsFromJson(const JsonDocument& jsonDocument, bool& ou
   outTarget = normalizePatternSlotName(chainTarget);
 
 } //   readChainSettingsFromJson()
-
-//-- Write chain settings into JSON document while preserving unrelated fields.
-static void writeChainSettingsToJson(JsonDocument& jsonDocument, bool enabled, uint8_t length,
-                                     const String& target)
-{
-  String normalizedTarget = normalizePatternSlotName(target);
-  JsonObject chainObject = jsonDocument["chain"].to<JsonObject>();
-
-  jsonDocument["chainEnabled"] = enabled;
-  jsonDocument["chainLength"] = length;
-  jsonDocument["chainTarget"] = normalizedTarget;
-
-  chainObject["enabled"] = enabled;
-  chainObject["length"] = length;
-  chainObject["target"] = normalizedTarget;
-
-} //   writeChainSettingsToJson()
 
 //-- Report LittleFS usage without creating legacy pattern directories.
 bool settingsStoreGetLittleFsUsage(size_t& outUsedBytes, size_t& outTotalBytes,

@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-05-31 - 14:11 ***/
+/*** Last Changed: 2026-06-01 - 13:45 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -526,6 +526,9 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
   {
     return;
   }
+
+  //-- Start release fade for older voices in the same choke group.
+  releaseVoicesInChokeGroup(chokeGroup);
 
   selectedVoice = selectVoiceForPlayback();
 

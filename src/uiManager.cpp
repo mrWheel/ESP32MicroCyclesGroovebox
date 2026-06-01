@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-01 - 13:28 ***/
+/*** Last Changed: 2026-06-01 - 13:45 ***/
 #include "uiManager.h"
 
 #include "DisplayDriverClass.h"
@@ -678,49 +678,6 @@ static String fitListRowText(const String& text)
   return text.substring(0, listRowContentChars);
 
 } //   fitListRowText()
-
-//-- Scan loaded RAM patterns for chain target selection.
-
-static int scanPatternsForSeries(char seriesLetter, String outNames[patternStoreMaxEntries])
-
-{
-
-  int outCount = 0;
-
-  (void)seriesLetter;
-
-  for (uint8_t slotIndex = 0;
-
-       slotIndex < sequencerPatternCount && outCount < static_cast<int>(patternStoreMaxEntries);
-
-       slotIndex++)
-
-  {
-
-    String slotName = uiState.chainSlotPatternNames[slotIndex];
-
-    if (slotName.isEmpty())
-
-    {
-
-      continue;
-    }
-
-    if (slotName == uiState.activePatternName)
-
-    {
-
-      continue;
-    }
-
-    outNames[outCount] = slotName;
-
-    outCount++;
-  }
-
-  return outCount;
-
-} //   scanPatternsForSeries()
 
 //-- Rebuild cached chain target list from loaded RAM pattern slots.
 static void refreshChainSeriesPatternCache()
@@ -1413,99 +1370,6 @@ static void refreshPatternList()
 
 } //   refreshPatternList()
 
-//-- Save current active RAM pattern to the active Card pattern group.
-static bool saveActivePattern()
-{
-  PatternData patternData;
-  SequencerView view;
-  String groupName = settingsStoreGetActivePatternGroup();
-  String targetName;
-
-  if (groupName.isEmpty())
-  {
-    return false;
-  }
-
-  sequencerGetView(view);
-
-  targetName = getPatternNameForSlot(view.activePatternIndex);
-
-  sequencerExportPattern(patternData);
-
-  if (view.activePatternIndex < sequencerPatternCount)
-  {
-    patternData.chainTarget = uiState.chainSlotTargetPatternNames[view.activePatternIndex];
-  }
-  else
-  {
-    patternData.chainTarget = "";
-  }
-
-  patternData.chainEnabled = !patternData.chainTarget.isEmpty();
-  patternData.chainLength = getLoadedPatternSlotCount();
-
-  if (!settingsStoreSavePatternToCard(groupName, targetName, patternData))
-  {
-    return false;
-  }
-
-  uiState.activePatternName = targetName;
-  assignActivePatternNameToCurrentSlot();
-  saveChainSettingsForPattern();
-  loadChainSettingsForActivePattern();
-  saveRuntimeSettingsFromCurrentState();
-
-  uiState.patternListNeedsRefresh = true;
-
-  return true;
-
-} //   saveActivePattern()
-
-//-- Legacy compatibility wrapper: create a new RAM pattern.
-static bool createNewPatternWithLetter(char patternLetter)
-{
-  SequencerView view;
-  uint8_t loadedPatternCount = getLoadedPatternSlotCount();
-  uint8_t newSlotIndex = loadedPatternCount;
-  uint8_t newPatternNumber = static_cast<uint8_t>(loadedPatternCount + 1U);
-  char patternNameBuffer[8];
-
-  (void)patternLetter;
-
-  sequencerGetView(view);
-
-  if (view.playing)
-  {
-    sequencerStopImmediately();
-  }
-
-  flushPendingChainSettings();
-
-  if (loadedPatternCount >= sequencerPatternCount)
-  {
-    showPatternStatus("Pattern memory\nfull", 2500);
-    return false;
-  }
-
-  sequencerCreatePatternSlot(newSlotIndex, newPatternNumber);
-
-  snprintf(patternNameBuffer, sizeof(patternNameBuffer), "p%02u",
-           static_cast<unsigned>(newPatternNumber));
-
-  uiState.chainSlotPatternNames[newSlotIndex] = String(patternNameBuffer);
-  uiState.chainSlotTargetPatternNames[newSlotIndex] = "";
-  uiState.activePatternName = uiState.chainSlotPatternNames[newSlotIndex];
-
-  refreshChainSeriesPatternCache();
-  loadChainSettingsForActivePattern();
-
-  uiState.patternListNeedsRefresh = true;
-  uiState.dirty = true;
-
-  return true;
-
-} //   createNewPatternWithLetter()
-
 //-- Legacy compatibility: load one selected Card pattern into the active RAM slot.
 static bool loadSelectedPattern()
 {
@@ -1984,60 +1848,6 @@ static bool saveLoadedPatternGroupToCard()
   return true;
 
 } //   saveLoadedPatternGroupToCard()
-
-//-- Return true when chain mode is musically active.
-static bool isPatternChainEnabled(const SequencerView& view)
-{
-  return view.chainEnabled && view.chainLength > 1U;
-
-} //   isPatternChainEnabled()
-
-//-- Resolve active pattern display text or fallback to slot label.
-static String getCurrentPatternDisplayName(const SequencerView& view)
-{
-  char slotLabel[8];
-
-  if (!uiState.activePatternName.isEmpty())
-  {
-    return uiState.activePatternName;
-  }
-
-  snprintf(slotLabel, sizeof(slotLabel), "p%02u",
-           static_cast<unsigned>(view.activePatternIndex + 1U));
-  return String(slotLabel);
-
-} //   getCurrentPatternDisplayName()
-
-//-- Resolve the active Card pattern group name for compact display.
-static String getActivePatternGroupDisplayName()
-{
-  String groupName = settingsStoreGetActivePatternGroup();
-
-  if (groupName.isEmpty())
-  {
-    return "";
-  }
-
-  return groupName;
-
-} //   getActivePatternGroupDisplayName()
-
-//-- Resolve next pattern display text for chain preview.
-static String getNextPatternDisplayName(const SequencerView& view)
-{
-  if (!isPatternChainEnabled(view))
-  {
-    return "";
-  }
-
-  if (!uiState.chainTargetValid || uiState.chainTargetPatternName.isEmpty())
-  {
-    return "";
-  }
-
-  return uiState.chainTargetPatternName;
-
-} //   getNextPatternDisplayName()
 
 //-- Build compact Groovebox footer line with playback and chain context.
 static String formatGrooveboxFooter(const SequencerView& view)
