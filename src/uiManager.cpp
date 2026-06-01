@@ -1,8 +1,9 @@
-/*** Last Changed: 2026-06-01 - 15:04 ***/
+/*** Last Changed: 2026-06-01 - 15:12 ***/
 #include "uiManager.h"
 #include "uiPatternGroupInput.h"
 #include "uiCardStorageActions.h"
 #include "uiCardStorageMenu.h"
+#include "uiGrooveboxScreen.h"
 
 #include "DisplayDriverClass.h"
 #include "audioEngine.h"
@@ -612,53 +613,6 @@ static void applyEditPopupValueDelta(int delta)
   }
 
 } //   applyEditPopupValueDelta()
-
-//-- Build 16-step trigger string for one track.
-static String buildTrackStepText(const Track& track)
-{
-  char stepText[17];
-
-  for (uint8_t stepIndex = 0; stepIndex < sequencerStepCount; stepIndex++)
-  {
-    stepText[stepIndex] = track.steps[stepIndex].trigger ? 'x' : '-';
-  }
-
-  stepText[16] = '\0';
-
-  return String(stepText);
-
-} //   buildTrackStepText()
-
-//-- Build one Groovebox track row: left-aligned instrument, right-aligned 16 steps.
-static String buildTrackRowText(const char* trackName, const Track& track)
-{
-  String row;
-  String leftField;
-
-  leftField = String(trackName);
-
-  if (track.mute)
-  {
-    leftField += "*";
-  }
-
-  if (leftField.length() > 7)
-  {
-    leftField = leftField.substring(0, 7);
-  }
-
-  while (leftField.length() < 7)
-  {
-    leftField += " ";
-  }
-
-  row = leftField;
-  row += buildTrackStepText(track);
-  row += " ";
-
-  return row;
-
-} //   buildTrackRowText()
 
 //-- Clip list item text to fit 26-char display with cursor wrappers.
 static String fitListRowText(const String& text)
@@ -2100,8 +2054,8 @@ static void drawSequencerScreen()
 
   for (uint8_t trackIndex = 0; trackIndex < sequencerTrackCount; trackIndex++)
   {
-    lines[trackIndex + 1] =
-        fitListRowText(buildTrackRowText(trackNames[trackIndex], view.pattern->tracks[trackIndex]));
+    lines[trackIndex + 1] = fitListRowText(uiGrooveboxScreenBuildTrackRowText(
+        trackNames[trackIndex], view.pattern->tracks[trackIndex]));
   }
 
   parameterLine = "";
