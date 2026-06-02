@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 12:24 ***/
+/*** Last Changed: 2026-06-02 - 12:32 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -20,18 +20,6 @@ static const int MAX_VOICES = 8;
 //-- Release fade length for voices that are being stopped or stolen.
 static const uint16_t voiceReleaseFrames = 256;
 static const i2s_port_t audioI2sPort = I2S_NUM_0;
-
-#ifndef AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT
-#define AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT 85
-#endif
-
-#if AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT < 50
-#define AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT 50
-#elif AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT > 98
-#define AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT 98
-#else
-#define AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT
-#endif
 
 //-- Fixed voice pool (Phase 4)
 Voice voices[MAX_VOICES];
@@ -60,9 +48,10 @@ static const float testToneAmplitude = 9000.0f;
 //-- Apply soft-knee limiter near full scale to reduce harsh clipping.
 static int32_t applyHeadroomLimiter(int32_t sampleValue)
 {
-#ifdef AUDIO_HEADROOM_LIMITER_ENABLE
-  const int32_t fullScale = 32767;
-  const int32_t threshold = (fullScale * AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT) / 100;
+  static constexpr int32_t fullScale = 32767;
+  static constexpr uint8_t limiterThresholdPercent = 85;
+
+  const int32_t threshold = (fullScale * limiterThresholdPercent) / 100;
   int32_t sign = 1;
   int32_t magnitude = sampleValue;
 
@@ -79,6 +68,7 @@ static int32_t applyHeadroomLimiter(int32_t sampleValue)
 
   const int32_t headroom = fullScale - threshold;
   const int32_t over = magnitude - threshold;
+
   int32_t limited = threshold + ((over * headroom) / (over + headroom));
 
   if (limited > fullScale)
@@ -87,9 +77,6 @@ static int32_t applyHeadroomLimiter(int32_t sampleValue)
   }
 
   return limited * sign;
-#else
-  return sampleValue;
-#endif
 
 } //   applyHeadroomLimiter()
 
@@ -392,10 +379,7 @@ bool audioEngineInit()
 #ifdef PIN_I2S_SD
   ESP_LOGI(logTag, "I2S SD/EN pin=%d set HIGH", PIN_I2S_SD);
 #endif
-#ifdef AUDIO_HEADROOM_LIMITER_ENABLE
-  ESP_LOGI(logTag, "Headroom limiter enabled (threshold=%d%%)",
-           AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT);
-#endif
+
   ESP_LOGI(logTag, "I2S pins BCLK=%d WS=%d DOUT=%d ", pinConfig.bck_io_num, pinConfig.ws_io_num,
            pinConfig.data_out_num);
   ESP_LOGI(logTag, "Audio engine initialized");
