@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 16:25 ***/
+/*** Last Changed: 2026-06-02 - 16:46 ***/
 #include "uiManager.h"
 #include "uiPatternGroupInput.h"
 #include "uiCardStorageActions.h"
@@ -68,6 +68,7 @@ struct UiState
   bool tempoEditOpen;
   bool editPopupOpen;
   bool editPopupValueEdit;
+  bool editPopupValueChanged;
   int editPopupSelection;
   uint8_t editPopupChainFocus;
   int tempoEditSelection;
@@ -495,17 +496,45 @@ static void auditionCurrentEditedStep()
 
 } //   auditionCurrentEditedStep()
 
-//-- Leave popup value-edit mode and audition the edited step once.
+//-- Audition the currently selected edited step twice when playback is stopped.
+static void auditionCurrentEditedStepTwiceWhenStopped()
+{
+  SequencerView view;
+
+  sequencerGetView(view);
+
+  if (view.playing)
+  {
+    return;
+  }
+
+  auditionCurrentEditedStep();
+
+  vTaskDelay(pdMS_TO_TICKS(150));
+
+  auditionCurrentEditedStep();
+
+} //   auditionCurrentEditedStepTwiceWhenStopped()
+
+//-- Leave popup value-edit mode and audition the edited step when changed.
 static void finishEditPopupValueEdit()
 {
+  bool shouldAudition = false;
+
   if (!uiState.editPopupValueEdit)
   {
     return;
   }
 
-  uiState.editPopupValueEdit = false;
+  shouldAudition = uiState.editPopupValueChanged;
 
-  auditionCurrentEditedStep();
+  uiState.editPopupValueEdit = false;
+  uiState.editPopupValueChanged = false;
+
+  if (shouldAudition)
+  {
+    auditionCurrentEditedStepTwiceWhenStopped();
+  }
 
   uiState.dirty = true;
 
@@ -529,7 +558,7 @@ static void closeEditPopupAndReturnToStepNavigation()
 
 } //   closeEditPopupAndReturnToStepNavigation()
 
-//-- Open edit popup only when the selected step contains a trigger.
+//-- Open edit popup for the current step, enabling the trigger first if needed.
 static void openEditPopupForCurrentStep()
 {
   SequencerView view;
@@ -548,14 +577,14 @@ static void openEditPopupForCurrentStep()
 
   if (!view.pattern->tracks[view.selectedTrack].steps[view.cursorStep].trigger)
   {
-    showPatternStatus("No trigger\nat step", 1200);
-    uiState.dirty = true;
-    return;
+    sequencerToggleCurrentStep();
+    sequencerGetView(view);
   }
 
   uiState.editPopupSelection = popupSelectionFromParameterPage(uiState.parameterPageIndex);
   uiState.editPopupOpen = true;
   uiState.editPopupValueEdit = false;
+  uiState.editPopupValueChanged = false;
   uiState.editPopupChainFocus = chainPopupFocusEnable;
   uiState.dirty = true;
 
@@ -577,22 +606,27 @@ static void applyEditPopupValueDelta(int delta)
   if (pageIndex == parameterPageVelocity)
   {
     sequencerAdjustCurrentStepVelocity(delta > 0 ? 8 : -8);
+    uiState.editPopupValueChanged = true;
   }
   else if (pageIndex == parameterPagePitch)
   {
     sequencerAdjustCurrentStepLockPitch(delta > 0 ? 1 : -1);
+    uiState.editPopupValueChanged = true;
   }
   else if (pageIndex == parameterPageDecay)
   {
     sequencerAdjustCurrentStepLockDecay(delta > 0 ? 5 : -5);
+    uiState.editPopupValueChanged = true;
   }
   else if (pageIndex == parameterPageProbability)
   {
     sequencerAdjustCurrentStepProbability(delta > 0 ? 5 : -5);
+    uiState.editPopupValueChanged = true;
   }
   else if (pageIndex == parameterPageMute)
   {
     sequencerToggleMuteForSelectedTrack();
+    uiState.editPopupValueChanged = true;
   }
   else
   {
@@ -612,6 +646,7 @@ static void applyEditPopupValueDelta(int delta)
         if (view.chainLength < loadedPatternCount)
         {
           sequencerAdjustChainLength(1);
+          uiState.editPopupValueChanged = true;
         }
       }
       else
@@ -619,12 +654,14 @@ static void applyEditPopupValueDelta(int delta)
         if (view.chainLength > 1U)
         {
           sequencerAdjustChainLength(-1);
+          uiState.editPopupValueChanged = true;
         }
       }
     }
     else if (uiState.editPopupChainFocus == chainPopupFocusPattern)
     {
       selectNextPatternInSeries(delta > 0 ? 1 : -1);
+      uiState.editPopupValueChanged = true;
     }
     else
     {
@@ -643,6 +680,8 @@ static void applyEditPopupValueDelta(int delta)
 
         sequencerToggleChainEnabled();
       }
+
+      uiState.editPopupValueChanged = true;
     }
 
     uiState.chainSettingsDirty = true;
@@ -2283,6 +2322,7 @@ static void handleEditPopupEncoderEvent(EncoderEvent encoderEvent)
     if (!uiState.editPopupValueEdit)
     {
       uiState.editPopupValueEdit = true;
+      uiState.editPopupValueChanged = false;
       uiState.editPopupChainFocus = chainPopupFocusEnable;
     }
     else if (uiState.parameterPageIndex == parameterPageChain)
@@ -3006,12 +3046,7 @@ void uiManagerHandleAuxButtonEvent(ButtonEvent buttonEvent)
     if (buttonEvent == BUTTON_EVENT_SHORT_PRESS || buttonEvent == BUTTON_EVENT_MEDIUM_PRESS ||
         buttonEvent == BUTTON_EVENT_LONG_PRESS)
     {
-      flushPendingChainSettings();
-
-      uiState.editPopupOpen = false;
-      uiState.editPopupValueEdit = false;
-      uiState.editPopupChainFocus = chainPopupFocusEnable;
-      uiState.dirty = true;
+      closeEditPopupAndReturnToStepNavigation();
     }
 
     return;
