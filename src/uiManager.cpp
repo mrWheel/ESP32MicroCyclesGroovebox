@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 11:54 ***/
+/*** Last Changed: 2026-06-02 - 14:27 ***/
 #include "uiManager.h"
 #include "uiPatternGroupInput.h"
 #include "uiCardStorageActions.h"
@@ -167,6 +167,9 @@ static bool loadCardPatternGroupIntoMemory(const String& groupName, bool showSta
 
 //-- Show temporary pattern/status popup.
 static void showPatternStatus(const String& text, uint32_t durationMs);
+
+//-- Flush pending chain settings to the active pattern.
+static void flushPendingChainSettings();
 
 //-- Count loaded pattern slots currently known by the UI.
 static uint8_t getLoadedPatternSlotCount()
@@ -481,6 +484,40 @@ static void auditionCurrentEditedStep()
 
 } //   auditionCurrentEditedStep()
 
+//-- Leave popup value-edit mode and audition the edited step once.
+static void finishEditPopupValueEdit()
+{
+  if (!uiState.editPopupValueEdit)
+  {
+    return;
+  }
+
+  uiState.editPopupValueEdit = false;
+
+  auditionCurrentEditedStep();
+
+  uiState.dirty = true;
+
+} //   finishEditPopupValueEdit()
+
+//-- Close edit popup and return to normal step navigation.
+static void closeEditPopupAndReturnToStepNavigation()
+{
+  finishEditPopupValueEdit();
+
+  flushPendingChainSettings();
+
+  uiState.editPopupOpen = false;
+  uiState.editPopupValueEdit = false;
+  uiState.editPopupChainFocus = chainPopupFocusEnable;
+
+  //-- Return to TRIG page so encoder rotation moves through steps again.
+  uiState.parameterPageIndex = parameterPageTrig;
+
+  uiState.dirty = true;
+
+} //   closeEditPopupAndReturnToStepNavigation()
+
 //-- Open edit popup only when the selected step contains a trigger.
 static void openEditPopupForCurrentStep()
 {
@@ -518,7 +555,6 @@ static void applyEditPopupValueDelta(int delta)
 {
   uint8_t pageIndex;
   SequencerView view;
-  bool shouldAudition = false;
 
   if (delta == 0)
   {
@@ -530,22 +566,18 @@ static void applyEditPopupValueDelta(int delta)
   if (pageIndex == parameterPageVelocity)
   {
     sequencerAdjustCurrentStepVelocity(delta > 0 ? 8 : -8);
-    shouldAudition = true;
   }
   else if (pageIndex == parameterPagePitch)
   {
     sequencerAdjustCurrentStepLockPitch(delta > 0 ? 1 : -1);
-    shouldAudition = true;
   }
   else if (pageIndex == parameterPageDecay)
   {
     sequencerAdjustCurrentStepLockDecay(delta > 0 ? 5 : -5);
-    shouldAudition = true;
   }
   else if (pageIndex == parameterPageProbability)
   {
     sequencerAdjustCurrentStepProbability(delta > 0 ? 5 : -5);
-    shouldAudition = true;
   }
   else if (pageIndex == parameterPageMute)
   {
@@ -605,10 +637,7 @@ static void applyEditPopupValueDelta(int delta)
     uiState.chainSettingsDirty = true;
   }
 
-  if (shouldAudition)
-  {
-    auditionCurrentEditedStep();
-  }
+  uiState.dirty = true;
 
 } //   applyEditPopupValueDelta()
 
@@ -2139,6 +2168,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   {
     return;
   }
+
   if (uiPatternGroupInputIsOpen())
   {
     if (encoderEvent == ENCODER_EVENT_LEFT)
@@ -2173,11 +2203,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
   {
     if (uiState.editPopupOpen)
     {
-      flushPendingChainSettings();
-      uiState.editPopupOpen = false;
-      uiState.editPopupValueEdit = false;
-      uiState.editPopupChainFocus = chainPopupFocusEnable;
-      uiState.dirty = true;
+      closeEditPopupAndReturnToStepNavigation();
       return;
     }
 
@@ -2193,6 +2219,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       }
 
       uiState.dirty = true;
+
       return;
     }
 
@@ -2222,7 +2249,9 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     uiNormalizeMenuSelection(uiState.menuSelection, settingsEntryCount);
     uiUpdateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount,
                                   uiState.menuFirstVisibleIndex);
+
     uiState.dirty = true;
+
     ESP_LOGI(logTag, "Long press toggled settings menu: menuOpen=%d", uiState.menuOpen ? 1 : 0);
 
     if (uiState.menuOpen)
@@ -2241,7 +2270,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       return;
     }
 
-    // Card Storage menu navigation
     if (uiState.cardStorageMenuOpen)
     {
       if (encoderEvent == ENCODER_EVENT_LEFT)
@@ -2306,6 +2334,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           showPatternStatus("Not implemented\nyet", 2000);
         }
       }
+
       uiState.dirty = true;
 
       return;
@@ -2318,10 +2347,12 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
         if (uiState.sampleSetCount > 0)
         {
           uiState.sampleSetListSelection--;
+
           if (uiState.sampleSetListSelection < 0)
           {
             uiState.sampleSetListSelection = uiState.sampleSetCount - 1;
           }
+
           uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
                                         uiState.sampleSetListFirstVisibleIndex);
         }
@@ -2331,10 +2362,12 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
         if (uiState.patternCount > 0)
         {
           uiState.patternListSelection--;
+
           if (uiState.patternListSelection < 0)
           {
             uiState.patternListSelection = uiState.patternCount - 1;
           }
+
           uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
                                         uiState.patternListFirstVisibleIndex);
         }
@@ -2362,10 +2395,12 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
         if (uiState.sampleSetCount > 0)
         {
           uiState.sampleSetListSelection++;
+
           if (uiState.sampleSetListSelection >= uiState.sampleSetCount)
           {
             uiState.sampleSetListSelection = 0;
           }
+
           uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
                                         uiState.sampleSetListFirstVisibleIndex);
         }
@@ -2375,10 +2410,12 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
         if (uiState.patternCount > 0)
         {
           uiState.patternListSelection++;
+
           if (uiState.patternListSelection >= uiState.patternCount)
           {
             uiState.patternListSelection = 0;
           }
+
           uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
                                         uiState.patternListFirstVisibleIndex);
         }
@@ -2419,6 +2456,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
               uiState.patternListFirstVisibleIndex = 0;
             }
           }
+
           if (uiState.patternListSourceFilter == patternListModeMemoryPatterns)
           {
             if (deleteSelectedPatternFromMemory())
@@ -2443,6 +2481,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           {
             String deletedName;
             PatternEntrySource deletedSource = PatternEntrySource::Local;
+
             if (deleteSelectedPattern(&deletedName, &deletedSource))
             {
               if (deletedSource == PatternEntrySource::Card)
@@ -2458,6 +2497,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
             {
               showPatternStatus("Delete failed", 2000);
             }
+
             if (uiState.patternCount == 0)
             {
               uiState.patternListOpen = false;
@@ -2474,6 +2514,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           uiState.wifiManagerWaitingForCredentials = true;
           uiState.wifiManagerPortalSeenActive = false;
         }
+
         uiState.wifiManagerConfirmOpen = false;
       }
       else if (uiState.eraseWifiConfirmOpen)
@@ -2483,6 +2524,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
           uiState.eraseWifiRestartPending = true;
           uiState.eraseWifiRestartAtMs = millis() + 1200;
         }
+
         uiState.eraseWifiConfirmOpen = false;
       }
       else if (!uiState.wifiManagerWaitingForCredentials)
@@ -2531,6 +2573,7 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
     }
 
     uiState.dirty = true;
+
     return;
   }
 
@@ -2589,19 +2632,21 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       }
       else
       {
-        uiState.editPopupValueEdit = false;
+        finishEditPopupValueEdit();
         flushPendingChainSettings();
       }
     }
     else if (encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
     {
-      uiState.parameterPageIndex = popupSelectionToParameterPage(uiState.editPopupSelection);
-      uiState.editPopupValueEdit = false;
-      uiState.editPopupChainFocus = chainPopupFocusEnable;
-      flushPendingChainSettings();
+      closeEditPopupAndReturnToStepNavigation();
+    }
+    else if (encoderEvent == ENCODER_EVENT_LONG_PRESS)
+    {
+      closeEditPopupAndReturnToStepNavigation();
     }
 
     uiState.dirty = true;
+
     return;
   }
 
@@ -2631,7 +2676,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       }
       else if (uiState.parameterPageIndex == parameterPageMute)
       {
-        //-weg- sequencerMoveTrack(-1);
         moveGrooveboxCursorAcrossPatterns(-1);
       }
       else
@@ -2671,7 +2715,6 @@ void uiManagerHandleEncoderEvent(EncoderEvent encoderEvent)
       }
       else if (uiState.parameterPageIndex == parameterPageMute)
       {
-        //-weg- sequencerMoveTrack(1);
         moveGrooveboxCursorAcrossPatterns(1);
       }
       else
