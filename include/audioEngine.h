@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 12:47 ***/
+/*** Last Changed: 2026-06-02 - 13:04 ***/
 #ifndef AUDIO_ENGINE_H
 #define AUDIO_ENGINE_H
 
@@ -13,7 +13,7 @@ struct AudioEngineStats
   bool testToneEnabled;
 };
 
-//-- Polyphonic voice structure (Phase 4)
+//-- Polyphonic voice structure.
 struct Voice
 {
   bool active;
@@ -22,11 +22,12 @@ struct Voice
   uint32_t frameCount;
   uint32_t position;
   uint8_t level;
-  uint16_t gain;           //-- Per-voice gain (fixed-point, 0..65535)
-  int8_t pan;              //-- -64 (left) .. +64 (right)
-  uint8_t chokeGroup;      //-- 0 = none, >0 = choke group
-  bool releaseActive;      //-- true = in release fade
-  uint16_t releaseCounter; //-- release fade progress
+  uint16_t gain;      //-- Per-voice gain, 0..65535.
+  int8_t pan;         //-- -64 left, 0 center, +64 right.
+  uint8_t chokeGroup; //-- 0 = none, >0 = choke group.
+  bool releaseActive;
+  uint16_t releaseCounter;
+  uint16_t attackCounter;
 };
 
 //-- Initialize I2S, DMA and mixer state.

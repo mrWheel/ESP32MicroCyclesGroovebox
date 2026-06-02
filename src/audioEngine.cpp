@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 12:47 ***/
+/*** Last Changed: 2026-06-02 - 13:04 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -19,6 +19,8 @@ static const int audioBlockFrames = 128;
 static const int MAX_VOICES = 8;
 //-- Release fade length for voices that are being stopped or stolen.
 static const uint16_t voiceReleaseFrames = 256;
+//-- Short start fade to reduce clicks on sample start/retrigger.
+static const uint16_t voiceAttackFrames = 32;
 static const i2s_port_t audioI2sPort = I2S_NUM_0;
 
 //-- Fixed voice pool (Phase 4)
@@ -178,6 +180,23 @@ static int32_t applyVoiceGain(int32_t sampleValue, uint16_t voiceGain)
 
 } //   applyVoiceGain()
 
+//-- Apply very short start fade for newly triggered voices.
+static int32_t applyVoiceAttackFade(int32_t sampleValue, Voice& voice)
+{
+  if (voice.attackCounter >= voiceAttackFrames)
+  {
+    return sampleValue;
+  }
+
+  int32_t fadedSample = (sampleValue * static_cast<int32_t>(voice.attackCounter)) /
+                        static_cast<int32_t>(voiceAttackFrames);
+
+  voice.attackCounter++;
+
+  return fadedSample;
+
+} //   applyVoiceAttackFade()
+
 //-- Clamp pan value to supported signed range.
 static int8_t clampPanValue(int8_t pan)
 {
@@ -301,6 +320,8 @@ static void mixNextFrame(int16_t& outLeft, int16_t& outRight, bool& hadVoices)
     int32_t sampleSetGainedSample = (leveledSample * static_cast<int32_t>(sampleGain)) / 100;
     int32_t gainedSample = applyVoiceGain(sampleSetGainedSample, voice.gain);
 
+    gainedSample = applyVoiceAttackFade(gainedSample, voice);
+
     if (voice.releaseActive)
     {
       uint16_t remainingFrames = 0;
@@ -320,6 +341,7 @@ static void mixNextFrame(int16_t& outLeft, int16_t& outRight, bool& hadVoices)
         voice.active = false;
         voice.releaseActive = false;
         voice.releaseCounter = 0;
+        voice.attackCounter = 0;
         continue;
       }
     }
@@ -375,6 +397,12 @@ bool audioEngineInit()
     voices[voiceIndex].frameCount = 0;
     voices[voiceIndex].position = 0;
     voices[voiceIndex].level = 0;
+    voices[voiceIndex].gain = 65535;
+    voices[voiceIndex].pan = 0;
+    voices[voiceIndex].chokeGroup = 0;
+    voices[voiceIndex].releaseActive = false;
+    voices[voiceIndex].releaseCounter = 0;
+    voices[voiceIndex].attackCounter = 0;
   }
 
   stats.dmaWriteFailures = 0;
@@ -450,6 +478,12 @@ bool audioEngineInit()
     voices[voiceIndex].frameCount = 0;
     voices[voiceIndex].position = 0;
     voices[voiceIndex].level = 0;
+    voices[voiceIndex].gain = 65535;
+    voices[voiceIndex].pan = 0;
+    voices[voiceIndex].chokeGroup = 0;
+    voices[voiceIndex].releaseActive = false;
+    voices[voiceIndex].releaseCounter = 0;
+    voices[voiceIndex].attackCounter = 0;
   }
 
   stats.dmaWriteFailures = 0;
@@ -583,7 +617,6 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
   (void)gain;
   (void)pan;
   (void)chokeGroup;
-
   return;
 #else
   const SampleSlot& sample = sampleManagerGetSample(sampleId);
@@ -599,7 +632,6 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
     return;
   }
 
-  //-- Start release fade for older voices in the same choke group.
   releaseVoicesInChokeGroup(chokeGroup);
 
   selectedVoice = selectVoiceForPlayback();
@@ -620,6 +652,7 @@ void audioEngineTriggerSample(SampleId sampleId, uint8_t level, uint16_t gain, i
   voices[selectedVoice].chokeGroup = chokeGroup;
   voices[selectedVoice].releaseActive = false;
   voices[selectedVoice].releaseCounter = 0;
+  voices[selectedVoice].attackCounter = 0;
 #endif
 
 } //   audioEngineTriggerSample()
