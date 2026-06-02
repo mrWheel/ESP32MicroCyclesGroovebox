@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 15:59 ***/
+/*** Last Changed: 2026-06-02 - 16:25 ***/
 #include "uiManager.h"
 #include "uiPatternGroupInput.h"
 #include "uiCardStorageActions.h"
@@ -2526,6 +2526,296 @@ static void handleGrooveboxEncoderEvent(EncoderEvent encoderEvent, const Sequenc
 
 } //   handleGrooveboxEncoderEvent()
 
+//-- Handle Card Storage submenu encoder events.
+static void handleCardStorageMenuEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    uiState.cardStorageMenuSelection--;
+
+    if (uiState.cardStorageMenuSelection < 0)
+    {
+      uiState.cardStorageMenuSelection = cardStorageMenuEntryCount - 1;
+    }
+
+    uiUpdateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
+                                  uiState.cardStorageMenuFirstVisibleIndex);
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    uiState.cardStorageMenuSelection++;
+
+    if (uiState.cardStorageMenuSelection >= cardStorageMenuEntryCount)
+    {
+      uiState.cardStorageMenuSelection = 0;
+    }
+
+    uiUpdateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
+                                  uiState.cardStorageMenuFirstVisibleIndex);
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    if (uiState.cardStorageMenuSelection == 0)
+    {
+      uiState.patternListOpen = true;
+      uiState.patternDeleteMode = false;
+      uiState.patternListSourceFilter = patternListModeCardGroups;
+      uiState.patternListSelection = 0;
+      uiState.patternListFirstVisibleIndex = 0;
+      uiState.patternListNeedsRefresh = true;
+      uiState.cardStorageMenuOpen = false;
+    }
+    else if (uiState.cardStorageMenuSelection == 1)
+    {
+      saveLoadedPatternGroupToCard();
+    }
+    else if (uiState.cardStorageMenuSelection == 2)
+    {
+      uiPatternGroupInputOpen(false);
+      uiState.dirty = true;
+    }
+    else if (uiState.cardStorageMenuSelection == 3)
+    {
+      uiPatternGroupInputOpen(true);
+      uiState.dirty = true;
+    }
+    else if (uiState.cardStorageMenuSelection == 4)
+    {
+      uiState.cardStorageMenuOpen = false;
+      uiState.cardStorageMenuSelection = 0;
+      uiState.cardStorageMenuFirstVisibleIndex = 0;
+    }
+    else
+    {
+      showPatternStatus("Not implemented\nyet", 2000);
+    }
+  }
+
+  uiState.dirty = true;
+
+} //   handleCardStorageMenuEncoderEvent()
+
+//-- Handle Sample Set list encoder events.
+static void handleSampleSetListEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    if (uiState.sampleSetCount > 0)
+    {
+      uiState.sampleSetListSelection--;
+
+      if (uiState.sampleSetListSelection < 0)
+      {
+        uiState.sampleSetListSelection = uiState.sampleSetCount - 1;
+      }
+
+      uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
+                                    uiState.sampleSetListFirstVisibleIndex);
+    }
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    if (uiState.sampleSetCount > 0)
+    {
+      uiState.sampleSetListSelection++;
+
+      if (uiState.sampleSetListSelection >= uiState.sampleSetCount)
+      {
+        uiState.sampleSetListSelection = 0;
+      }
+
+      uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
+                                    uiState.sampleSetListFirstVisibleIndex);
+    }
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    loadSelectedSampleSetFromMenu();
+  }
+
+  uiState.dirty = true;
+
+} //   handleSampleSetListEncoderEvent()
+
+//-- Handle Pattern list encoder events.
+static void handlePatternListEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    if (uiState.patternCount > 0)
+    {
+      uiState.patternListSelection--;
+
+      if (uiState.patternListSelection < 0)
+      {
+        uiState.patternListSelection = uiState.patternCount - 1;
+      }
+
+      uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
+                                    uiState.patternListFirstVisibleIndex);
+    }
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    if (uiState.patternCount > 0)
+    {
+      uiState.patternListSelection++;
+
+      if (uiState.patternListSelection >= uiState.patternCount)
+      {
+        uiState.patternListSelection = 0;
+      }
+
+      uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
+                                    uiState.patternListFirstVisibleIndex);
+    }
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    if (uiState.patternCount > 0)
+    {
+      if (uiState.patternListSourceFilter == patternListModeCardGroups)
+      {
+        if (loadSelectedCardPatternGroup())
+        {
+          uiState.patternListOpen = false;
+          uiState.patternListSourceFilter = -1;
+          uiState.patternListFirstVisibleIndex = 0;
+        }
+      }
+
+      if (uiState.patternListSourceFilter == patternListModeMemoryPatterns)
+      {
+        if (deleteSelectedPatternFromMemory())
+        {
+          uiState.patternListOpen = false;
+          uiState.patternDeleteMode = false;
+          uiState.patternListSourceFilter = -1;
+          uiState.patternListFirstVisibleIndex = 0;
+        }
+      }
+      else if (!uiState.patternDeleteMode)
+      {
+        if (loadSelectedPattern())
+        {
+          uiState.menuOpen = false;
+          uiState.patternListOpen = false;
+          uiState.patternListFirstVisibleIndex = 0;
+        }
+      }
+      else
+      {
+        String deletedName;
+        PatternEntrySource deletedSource = PatternEntrySource::Local;
+
+        if (deleteSelectedPattern(&deletedName, &deletedSource))
+        {
+          if (deletedSource == PatternEntrySource::Card)
+          {
+            showPatternStatus(deletedName + " deleted from\nSD card", 2000);
+          }
+          else
+          {
+            showPatternStatus(deletedName + " deleted from\nLocal storage", 2000);
+          }
+        }
+        else
+        {
+          showPatternStatus("Delete failed", 2000);
+        }
+
+        if (uiState.patternCount == 0)
+        {
+          uiState.patternListOpen = false;
+          uiState.patternListFirstVisibleIndex = 0;
+        }
+      }
+    }
+  }
+
+  uiState.dirty = true;
+
+} //   handlePatternListEncoderEvent()
+
+//-- Handle WiFi Manager confirmation encoder events.
+static void handleWifiConfirmEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    uiState.wifiManagerConfirmSelection = (uiState.wifiManagerConfirmSelection <= 1) ? 2 : 1;
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    uiState.wifiManagerConfirmSelection = (uiState.wifiManagerConfirmSelection >= 2) ? 1 : 2;
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    if (uiState.wifiManagerConfirmSelection == 2)
+    {
+      systemManagerQueueCommand(SystemCommand::startWifiManager);
+      uiState.wifiManagerWaitingForCredentials = true;
+      uiState.wifiManagerPortalSeenActive = false;
+    }
+
+    uiState.wifiManagerConfirmOpen = false;
+  }
+
+  uiState.dirty = true;
+
+} //   handleWifiConfirmEncoderEvent()
+
+//-- Handle Erase WiFi confirmation encoder events.
+static void handleEraseWifiConfirmEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    uiState.eraseWifiConfirmSelection = (uiState.eraseWifiConfirmSelection <= 1) ? 2 : 1;
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    uiState.eraseWifiConfirmSelection = (uiState.eraseWifiConfirmSelection >= 2) ? 1 : 2;
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    if (uiState.eraseWifiConfirmSelection == 2)
+    {
+      uiState.eraseWifiRestartPending = true;
+      uiState.eraseWifiRestartAtMs = millis() + 1200;
+    }
+
+    uiState.eraseWifiConfirmOpen = false;
+  }
+
+  uiState.dirty = true;
+
+} //   handleEraseWifiConfirmEncoderEvent()
+
+//-- Handle root System Settings menu encoder events.
+static void handleRootSettingsMenuEncoderEvent(EncoderEvent encoderEvent)
+{
+  if (encoderEvent == ENCODER_EVENT_LEFT)
+  {
+    uiState.menuSelection--;
+    uiNormalizeMenuSelection(uiState.menuSelection, settingsEntryCount);
+    uiUpdateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount,
+                                  uiState.menuFirstVisibleIndex);
+  }
+  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+  {
+    uiState.menuSelection++;
+    uiNormalizeMenuSelection(uiState.menuSelection, settingsEntryCount);
+    uiUpdateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount,
+                                  uiState.menuFirstVisibleIndex);
+  }
+  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+  {
+    executeMenuAction();
+  }
+
+  uiState.dirty = true;
+
+} //   handleRootSettingsMenuEncoderEvent()
+
 //-- Handle encoder events while System Settings or submenus are open.
 static void handleMenuEncoderEvent(EncoderEvent encoderEvent)
 {
@@ -2537,264 +2827,38 @@ static void handleMenuEncoderEvent(EncoderEvent encoderEvent)
 
   if (uiState.cardStorageMenuOpen)
   {
-    if (encoderEvent == ENCODER_EVENT_LEFT)
-    {
-      uiState.cardStorageMenuSelection--;
-
-      if (uiState.cardStorageMenuSelection < 0)
-      {
-        uiState.cardStorageMenuSelection = cardStorageMenuEntryCount - 1;
-      }
-
-      uiUpdateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
-                                    uiState.cardStorageMenuFirstVisibleIndex);
-    }
-    else if (encoderEvent == ENCODER_EVENT_RIGHT)
-    {
-      uiState.cardStorageMenuSelection++;
-
-      if (uiState.cardStorageMenuSelection >= cardStorageMenuEntryCount)
-      {
-        uiState.cardStorageMenuSelection = 0;
-      }
-
-      uiUpdateListFirstVisibleIndex(uiState.cardStorageMenuSelection, cardStorageMenuEntryCount,
-                                    uiState.cardStorageMenuFirstVisibleIndex);
-    }
-    else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS ||
-             encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
-    {
-      if (uiState.cardStorageMenuSelection == 0)
-      {
-        uiState.patternListOpen = true;
-        uiState.patternDeleteMode = false;
-        uiState.patternListSourceFilter = patternListModeCardGroups;
-        uiState.patternListSelection = 0;
-        uiState.patternListFirstVisibleIndex = 0;
-        uiState.patternListNeedsRefresh = true;
-        uiState.cardStorageMenuOpen = false;
-      }
-      else if (uiState.cardStorageMenuSelection == 1)
-      {
-        saveLoadedPatternGroupToCard();
-      }
-      else if (uiState.cardStorageMenuSelection == 2)
-      {
-        uiPatternGroupInputOpen(false);
-        uiState.dirty = true;
-      }
-      else if (uiState.cardStorageMenuSelection == 3)
-      {
-        uiPatternGroupInputOpen(true);
-        uiState.dirty = true;
-      }
-      else if (uiState.cardStorageMenuSelection == 4)
-      {
-        uiState.cardStorageMenuOpen = false;
-        uiState.cardStorageMenuSelection = 0;
-        uiState.cardStorageMenuFirstVisibleIndex = 0;
-      }
-      else
-      {
-        showPatternStatus("Not implemented\nyet", 2000);
-      }
-    }
-
-    uiState.dirty = true;
-
+    handleCardStorageMenuEncoderEvent(encoderEvent);
     return;
   }
 
-  if (encoderEvent == ENCODER_EVENT_LEFT)
+  if (uiState.sampleSetListOpen)
   {
-    if (uiState.sampleSetListOpen)
-    {
-      if (uiState.sampleSetCount > 0)
-      {
-        uiState.sampleSetListSelection--;
-
-        if (uiState.sampleSetListSelection < 0)
-        {
-          uiState.sampleSetListSelection = uiState.sampleSetCount - 1;
-        }
-
-        uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
-                                      uiState.sampleSetListFirstVisibleIndex);
-      }
-    }
-    else if (uiState.patternListOpen)
-    {
-      if (uiState.patternCount > 0)
-      {
-        uiState.patternListSelection--;
-
-        if (uiState.patternListSelection < 0)
-        {
-          uiState.patternListSelection = uiState.patternCount - 1;
-        }
-
-        uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
-                                      uiState.patternListFirstVisibleIndex);
-      }
-    }
-    else if (uiState.wifiManagerConfirmOpen)
-    {
-      uiState.wifiManagerConfirmSelection = (uiState.wifiManagerConfirmSelection <= 1) ? 2 : 1;
-    }
-    else if (uiState.eraseWifiConfirmOpen)
-    {
-      uiState.eraseWifiConfirmSelection = (uiState.eraseWifiConfirmSelection <= 1) ? 2 : 1;
-    }
-    else if (!uiState.wifiManagerWaitingForCredentials)
-    {
-      uiState.menuSelection--;
-      uiNormalizeMenuSelection(uiState.menuSelection, settingsEntryCount);
-      uiUpdateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount,
-                                    uiState.menuFirstVisibleIndex);
-    }
+    handleSampleSetListEncoderEvent(encoderEvent);
+    return;
   }
-  else if (encoderEvent == ENCODER_EVENT_RIGHT)
+
+  if (uiState.patternListOpen)
   {
-    if (uiState.sampleSetListOpen)
-    {
-      if (uiState.sampleSetCount > 0)
-      {
-        uiState.sampleSetListSelection++;
-
-        if (uiState.sampleSetListSelection >= uiState.sampleSetCount)
-        {
-          uiState.sampleSetListSelection = 0;
-        }
-
-        uiUpdateListFirstVisibleIndex(uiState.sampleSetListSelection, uiState.sampleSetCount,
-                                      uiState.sampleSetListFirstVisibleIndex);
-      }
-    }
-    else if (uiState.patternListOpen)
-    {
-      if (uiState.patternCount > 0)
-      {
-        uiState.patternListSelection++;
-
-        if (uiState.patternListSelection >= uiState.patternCount)
-        {
-          uiState.patternListSelection = 0;
-        }
-
-        uiUpdateListFirstVisibleIndex(uiState.patternListSelection, uiState.patternCount,
-                                      uiState.patternListFirstVisibleIndex);
-      }
-    }
-    else if (uiState.wifiManagerConfirmOpen)
-    {
-      uiState.wifiManagerConfirmSelection = (uiState.wifiManagerConfirmSelection >= 2) ? 1 : 2;
-    }
-    else if (uiState.eraseWifiConfirmOpen)
-    {
-      uiState.eraseWifiConfirmSelection = (uiState.eraseWifiConfirmSelection >= 2) ? 1 : 2;
-    }
-    else if (!uiState.wifiManagerWaitingForCredentials)
-    {
-      uiState.menuSelection++;
-      uiNormalizeMenuSelection(uiState.menuSelection, settingsEntryCount);
-      uiUpdateListFirstVisibleIndex(uiState.menuSelection, settingsEntryCount,
-                                    uiState.menuFirstVisibleIndex);
-    }
+    handlePatternListEncoderEvent(encoderEvent);
+    return;
   }
-  else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS || encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
+
+  if (uiState.wifiManagerConfirmOpen)
   {
-    if (uiState.sampleSetListOpen)
-    {
-      loadSelectedSampleSetFromMenu();
-    }
-    else if (uiState.patternListOpen)
-    {
-      if (uiState.patternCount > 0)
-      {
-        if (uiState.patternListSourceFilter == patternListModeCardGroups)
-        {
-          if (loadSelectedCardPatternGroup())
-          {
-            uiState.patternListOpen = false;
-            uiState.patternListSourceFilter = -1;
-            uiState.patternListFirstVisibleIndex = 0;
-          }
-        }
+    handleWifiConfirmEncoderEvent(encoderEvent);
+    return;
+  }
 
-        if (uiState.patternListSourceFilter == patternListModeMemoryPatterns)
-        {
-          if (deleteSelectedPatternFromMemory())
-          {
-            uiState.patternListOpen = false;
-            uiState.patternDeleteMode = false;
-            uiState.patternListSourceFilter = -1;
-            uiState.patternListFirstVisibleIndex = 0;
-          }
-        }
-        else if (!uiState.patternDeleteMode)
-        {
-          if (loadSelectedPattern())
-          {
-            uiState.menuOpen = false;
-            uiState.patternListOpen = false;
-            uiState.patternListFirstVisibleIndex = 0;
-          }
-        }
-        else if (encoderEvent == ENCODER_EVENT_SHORT_PRESS ||
-                 encoderEvent == ENCODER_EVENT_MEDIUM_PRESS)
-        {
-          String deletedName;
-          PatternEntrySource deletedSource = PatternEntrySource::Local;
+  if (uiState.eraseWifiConfirmOpen)
+  {
+    handleEraseWifiConfirmEncoderEvent(encoderEvent);
+    return;
+  }
 
-          if (deleteSelectedPattern(&deletedName, &deletedSource))
-          {
-            if (deletedSource == PatternEntrySource::Card)
-            {
-              showPatternStatus(deletedName + " deleted from\nSD card", 2000);
-            }
-            else
-            {
-              showPatternStatus(deletedName + " deleted from\nLocal storage", 2000);
-            }
-          }
-          else
-          {
-            showPatternStatus("Delete failed", 2000);
-          }
-
-          if (uiState.patternCount == 0)
-          {
-            uiState.patternListOpen = false;
-            uiState.patternListFirstVisibleIndex = 0;
-          }
-        }
-      }
-    }
-    else if (uiState.wifiManagerConfirmOpen)
-    {
-      if (uiState.wifiManagerConfirmSelection == 2)
-      {
-        systemManagerQueueCommand(SystemCommand::startWifiManager);
-        uiState.wifiManagerWaitingForCredentials = true;
-        uiState.wifiManagerPortalSeenActive = false;
-      }
-
-      uiState.wifiManagerConfirmOpen = false;
-    }
-    else if (uiState.eraseWifiConfirmOpen)
-    {
-      if (uiState.eraseWifiConfirmSelection == 2)
-      {
-        uiState.eraseWifiRestartPending = true;
-        uiState.eraseWifiRestartAtMs = millis() + 1200;
-      }
-
-      uiState.eraseWifiConfirmOpen = false;
-    }
-    else if (!uiState.wifiManagerWaitingForCredentials)
-    {
-      executeMenuAction();
-    }
+  if (!uiState.wifiManagerWaitingForCredentials)
+  {
+    handleRootSettingsMenuEncoderEvent(encoderEvent);
+    return;
   }
 
   uiState.dirty = true;
