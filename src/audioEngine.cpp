@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-02 - 12:16 ***/
+/*** Last Changed: 2026-06-02 - 12:24 ***/
 #include "audioEngine.h"
 #include "appConfig.h"
 
@@ -20,18 +20,6 @@ static const int MAX_VOICES = 8;
 //-- Release fade length for voices that are being stopped or stolen.
 static const uint16_t voiceReleaseFrames = 256;
 static const i2s_port_t audioI2sPort = I2S_NUM_0;
-
-#ifndef AUDIO_MASTER_GAIN_PERCENT
-#define AUDIO_MASTER_GAIN_PERCENT 45
-#endif
-
-#if AUDIO_MASTER_GAIN_PERCENT < 10
-#define AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT 10
-#elif AUDIO_MASTER_GAIN_PERCENT > 150
-#define AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT 150
-#else
-#define AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT AUDIO_MASTER_GAIN_PERCENT
-#endif
 
 #ifndef AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT
 #define AUDIO_HEADROOM_LIMITER_THRESHOLD_PERCENT 85
@@ -105,23 +93,21 @@ static int32_t applyHeadroomLimiter(int32_t sampleValue)
 
 } //   applyHeadroomLimiter()
 
-//-- Apply final software gain and clamp to int16 range.
+//-- Apply limiter and clamp to int16 range.
 static int16_t applyMasterGainAndClamp(int32_t sampleValue)
 {
-  int32_t scaled = (sampleValue * AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT) / 100;
+  int32_t limited = applyHeadroomLimiter(sampleValue);
 
-  scaled = applyHeadroomLimiter(scaled);
-
-  if (scaled > 32767)
+  if (limited > 32767)
   {
-    scaled = 32767;
+    limited = 32767;
   }
-  else if (scaled < -32768)
+  else if (limited < -32768)
   {
-    scaled = -32768;
+    limited = -32768;
   }
 
-  return static_cast<int16_t>(scaled);
+  return static_cast<int16_t>(limited);
 
 } //   applyMasterGainAndClamp()
 
@@ -410,9 +396,8 @@ bool audioEngineInit()
   ESP_LOGI(logTag, "Headroom limiter enabled (threshold=%d%%)",
            AUDIO_HEADROOM_LIMITER_EFFECTIVE_THRESHOLD_PERCENT);
 #endif
-  ESP_LOGI(logTag, "I2S pins BCLK=%d WS=%d DOUT=%d (master gain=%d%%, requested=%d%%)",
-           pinConfig.bck_io_num, pinConfig.ws_io_num, pinConfig.data_out_num,
-           AUDIO_MASTER_GAIN_EFFECTIVE_PERCENT, AUDIO_MASTER_GAIN_PERCENT);
+  ESP_LOGI(logTag, "I2S pins BCLK=%d WS=%d DOUT=%d ", pinConfig.bck_io_num, pinConfig.ws_io_num,
+           pinConfig.data_out_num);
   ESP_LOGI(logTag, "Audio engine initialized");
 
   return true;
