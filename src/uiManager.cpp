@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-10 - 16:50 ***/
+/*** Last Changed: 2026-06-10 - 17:12 ***/
 #include "uiManager.h"
 #include "uiPatternGroupInput.h"
 #include "uiCardStorageActions.h"
@@ -1711,6 +1711,7 @@ static void refreshSampleSetList()
 {
   char sampleSetNames[sampleSetListMaxEntries][4] = {0};
   uint8_t sampleSetCount = 0;
+  String activeSampleSet = settingsStoreGetActiveSampleSet();
 
   uiState.sampleSetCount = 0;
   uiState.sampleSetListSelection = 0;
@@ -1724,8 +1725,19 @@ static void refreshSampleSetList()
   for (uint8_t sampleSetIndex = 0; sampleSetIndex < sampleSetCount; sampleSetIndex++)
   {
     uiState.sampleSetNames[sampleSetIndex] = String(sampleSetNames[sampleSetIndex]);
-    uiState.sampleSetDisplayItems[sampleSetIndex] =
-        fitListRowText(uiState.sampleSetNames[sampleSetIndex]);
+
+    if (uiState.sampleSetNames[sampleSetIndex] == activeSampleSet)
+    {
+      uiState.sampleSetDisplayItems[sampleSetIndex] =
+          fitListRowText("* " + uiState.sampleSetNames[sampleSetIndex]);
+      uiState.sampleSetListSelection = sampleSetIndex;
+    }
+    else
+    {
+      uiState.sampleSetDisplayItems[sampleSetIndex] =
+          fitListRowText("  " + uiState.sampleSetNames[sampleSetIndex]);
+    }
+
     uiState.sampleSetCount++;
   }
 
