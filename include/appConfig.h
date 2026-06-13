@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-13 - 14:54 ***/
+/*** Last Changed: 2026-06-13 - 15:22 ***/
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
@@ -59,6 +59,14 @@
 
 #ifndef PIN_SD_MOSI
 #define PIN_SD_MOSI 21
+#endif
+
+#ifndef TFT_SPI_HOST
+#define TFT_SPI_HOST FSPI
+#endif
+
+#ifndef SD_SPI_HOST
+#define SD_SPI_HOST HSPI
 #endif
 
 #ifndef TFT_WIDTH

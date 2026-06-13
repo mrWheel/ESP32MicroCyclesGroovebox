@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-13 - 14:54 ***/
+/*** Last Changed: 2026-06-13 - 15:22 ***/
 #include "DisplayDriverClass.h"
 #include "appConfig.h"
 #include "colorSettings.h"
@@ -20,8 +20,11 @@
 //--- Based on hardware test pattern results, this panel maps colors inverted.
 #define PANEL_COLOR(colorValue) static_cast<uint16_t>((colorValue) ^ 0xFFFFU)
 
-//--- TFT instance
-static Adafruit_ST7789 tft(PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
+//--- Dedicated TFT SPI bus.
+static SPIClass tftSpi(TFT_SPI_HOST);
+
+//--- TFT instance.
+static Adafruit_ST7789 tft(&tftSpi, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
 
 //--- Public display instance
 DisplayDriver display;
@@ -1404,7 +1407,10 @@ void DisplayDriver::init(uint16_t width, uint16_t height, int rotation)
   pinMode(PIN_TFT_BLK, OUTPUT);
   digitalWrite(PIN_TFT_BLK, HIGH);
 
-  SPI.begin(PIN_TFT_SCLK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
+  pinMode(PIN_TFT_CS, OUTPUT);
+  digitalWrite(PIN_TFT_CS, HIGH);
+
+  tftSpi.begin(PIN_TFT_SCLK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
 
   activeDisplayRotation = rotation;
 

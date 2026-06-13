@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-13 - 14:54 ***/
+/*** Last Changed: 2026-06-13 - 15:22 ***/
 #include <Arduino.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -19,7 +19,7 @@
 #include "progVersion.h"
 
 //-- PROG_VERSION.
-const char* PROG_VERSION = "v1.2.1";
+const char* PROG_VERSION = "v1.3.0";
 
 //-- Logging tag.
 static const char* logTag = "Groovebox";
@@ -231,28 +231,32 @@ static void displayFilesystemDirectoryRecursive(fs::FS& filesystem, const char* 
 static void runSdSmokeTestAndHalt()
 {
   static const uint32_t initFrequenciesHz[] = {400000U, 1000000U, 4000000U};
+  static SPIClass smokeSdSpi(SD_SPI_HOST);
 
   ESP_LOGI(logTag, "SD smoke test pins: CS=%d SCK=%d MISO=%d MOSI=%d", PIN_SD_CS, PIN_SD_SCK,
            PIN_SD_MISO, PIN_SD_MOSI);
 
   pinMode(PIN_TFT_CS, OUTPUT);
   digitalWrite(PIN_TFT_CS, HIGH);
+
   pinMode(PIN_SD_CS, OUTPUT);
   digitalWrite(PIN_SD_CS, HIGH);
+
   pinMode(PIN_SD_MISO, INPUT_PULLUP);
 
-  SPI.end();
-  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  smokeSdSpi.end();
+  smokeSdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+
   delay(20);
 
-  SPI.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
+  smokeSdSpi.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
 
   for (uint8_t dummyIndex = 0; dummyIndex < 16; dummyIndex++)
   {
-    (void)SPI.transfer(0xFF);
+    (void)smokeSdSpi.transfer(0xFF);
   }
 
-  SPI.endTransaction();
+  smokeSdSpi.endTransaction();
 
   bool mountOk = false;
 
@@ -266,7 +270,7 @@ static void runSdSmokeTestAndHalt()
 
     SD.end();
 
-    if (SD.begin(PIN_SD_CS, SPI, initFrequency))
+    if (SD.begin(PIN_SD_CS, smokeSdSpi, initFrequency))
     {
       mountOk = true;
       break;
@@ -278,69 +282,15 @@ static void runSdSmokeTestAndHalt()
   if (!mountOk)
   {
     ESP_LOGE(logTag, "SD smoke test: mount failed");
-
-    for (;;)
-    {
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-  }
-
-  uint8_t cardType = SD.cardType();
-  uint64_t cardSizeMb = static_cast<uint64_t>(SD.cardSize()) / (1024ULL * 1024ULL);
-
-  ESP_LOGI(logTag, "SD smoke test: mount OK, cardType=%u, cardSizeMB=%llu",
-           static_cast<unsigned>(cardType), static_cast<unsigned long long>(cardSizeMb));
-
-  File rootDir = SD.open("/");
-
-  if (!rootDir || !rootDir.isDirectory())
-  {
-    ESP_LOGE(logTag, "SD smoke test: failed to open root directory");
   }
   else
   {
-    ESP_LOGI(logTag, "SD smoke test: root directory listing");
-
-    while (true)
-    {
-      File entry = rootDir.openNextFile();
-
-      if (!entry)
-      {
-        break;
-      }
-
-      ESP_LOGI(logTag, "  %s (%s, %lu bytes)", entry.name(), entry.isDirectory() ? "dir" : "file",
-               static_cast<unsigned long>(entry.size()));
-
-      entry.close();
-    }
+    ESP_LOGI(logTag, "SD smoke test: mount OK");
   }
 
-  // Use active sample set directory for SD sample test
-  const char* sampleSet = sampleManagerGetActiveSampleSet();
-  const char* sampleNames[] = {"kick.wav", "snare.wav", "ch.wav",
-                               "oh.wav",   "tone.wav",  "metal.wav"};
-  String sampleSetDir = String("/samples/") + sampleSet + "/";
-  for (size_t sampleIndex = 0; sampleIndex < 6; sampleIndex++)
+  while (true)
   {
-    String samplePath = sampleSetDir + sampleNames[sampleIndex];
-    File sampleFile = SD.open(samplePath.c_str(), FILE_READ);
-    if (!sampleFile)
-    {
-      ESP_LOGW(logTag, "SD smoke test: missing %s", samplePath.c_str());
-      continue;
-    }
-    ESP_LOGI(logTag, "SD smoke test: found %s (%lu bytes)", samplePath.c_str(),
-             static_cast<unsigned long>(sampleFile.size()));
-    sampleFile.close();
-  }
-
-  ESP_LOGI(logTag, "SD smoke test done. Firmware halted.");
-
-  for (;;)
-  {
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    delay(1000);
   }
 
 } //   runSdSmokeTestAndHalt()
@@ -508,6 +458,8 @@ void setup()
   ESP_LOGI(logTag, "Booting ESP32 MicroCycles Groovebox (%s)", PROG_VERSION);
   ESP_LOGI(logTag, "TFT pins: CS=%d DC=%d RST=%d BL=%d SCL=%d SDA=%d", PIN_TFT_CS, PIN_TFT_DC,
            PIN_TFT_RST, PIN_TFT_BLK, PIN_TFT_SCLK, PIN_TFT_MOSI);
+  ESP_LOGI(logTag, "SD pins: CS=%d SCK=%d MISO=%d MOSI=%d", PIN_SD_CS, PIN_SD_SCK, PIN_SD_MISO,
+           PIN_SD_MOSI);
   ESP_LOGI(logTag, "I2S pins: BCLK=%d WS=%d DOUT=%d", PIN_I2S_BCLK, PIN_I2S_WS, PIN_I2S_DOUT);
 
   logPinConflictWarnings();
@@ -522,14 +474,18 @@ void setup()
            "NO_DAC_HARDWARE is enabled. System remains active; only I2S/DAC hardware is skipped.");
 #endif
 
-  //-- SD/sample init must remain the first hardware init on the shared SPI bus.
+  settingsStoreLoadRuntimeSettings(runtimeSettings);
+
+  bootStatusInit(runtimeSettings);
+  bootStatusPush(String("Boot ") + PROG_VERSION);
+  bootStatusPush("Display ready");
+
   if (!sampleManagerInit())
   {
     ESP_LOGW(logTag, "Sample manager init failed, using fallback waveforms");
   }
 
-  //-- Runtime settings are intentionally loaded after SD init for SPI stability.
-  settingsStoreLoadRuntimeSettings(runtimeSettings);
+  bootStatusPush(sampleManagerIsSdCardReady() ? "Sample manager ready" : "Sample init failed");
 
   inputQueue =
       xQueueCreateStatic(24, sizeof(InputEventMessage), inputQueueStorage, &inputQueueStruct);
@@ -537,16 +493,12 @@ void setup()
   input.begin();
   input.setEncoderDirectionReversed(runtimeSettings.encoderDirectionReversed);
 
+  bootStatusPush("Input ready");
+
   ESP_LOGI(logTag, "Loaded settings: rotation=%u theme=%d encoder=%s",
            static_cast<unsigned>(runtimeSettings.displayRotation), runtimeSettings.themeColorIndex,
            runtimeSettings.encoderDirectionReversed ? "B-A" : "A-B");
 
-  //-- Display init must stay after SD/sample init because TFT and SD share SPI.
-  bootStatusInit(runtimeSettings);
-
-  bootStatusPush(String("Boot ") + PROG_VERSION);
-  bootStatusPush(sampleManagerIsSdCardReady() ? "Sample manager ready" : "Sample init failed");
-  bootStatusPush("Input ready");
   bootStatusPush("Pattern storage: SD/Card model");
 
 #ifdef DISPLAY_DEBUG_INFO

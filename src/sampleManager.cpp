@@ -1,4 +1,4 @@
-/*** Last Changed: 2026-06-11 - 11:30 ***/
+/*** Last Changed: 2026-06-13 - 15:22 ***/
 #include "sampleManager.h"
 #include "appConfig.h"
 #include "settingsStore.h"
@@ -10,6 +10,9 @@
 #include <esp_log.h>
 #include <math.h>
 #include <string.h>
+
+//-- Dedicated SD card SPI bus.
+static SPIClass sdSpi(SD_SPI_HOST);
 
 static const char* logTag = "SampleManager";
 
@@ -587,23 +590,25 @@ static bool initSdCard()
 
   pinMode(PIN_TFT_CS, OUTPUT);
   digitalWrite(PIN_TFT_CS, HIGH);
+
   pinMode(PIN_SD_CS, OUTPUT);
   digitalWrite(PIN_SD_CS, HIGH);
+
   pinMode(PIN_SD_MISO, INPUT_PULLUP);
 
-  SPI.end();
-  SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  sdSpi.end();
+  sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
 
   delay(20);
 
-  SPI.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
+  sdSpi.beginTransaction(SPISettings(400000U, MSBFIRST, SPI_MODE0));
 
   for (uint8_t dummyIndex = 0; dummyIndex < 16; dummyIndex++)
   {
-    (void)SPI.transfer(0xFF);
+    (void)sdSpi.transfer(0xFF);
   }
 
-  SPI.endTransaction();
+  sdSpi.endTransaction();
 
   for (size_t attemptIndex = 0;
        attemptIndex < (sizeof(initFrequenciesHz) / sizeof(initFrequenciesHz[0])); attemptIndex++)
@@ -615,7 +620,7 @@ static bool initSdCard()
     ESP_LOGI(logTag, "SD init attempt %u at %luHz", static_cast<unsigned>(attemptIndex + 1),
              static_cast<unsigned long>(initFrequency));
 
-    if (SD.begin(PIN_SD_CS, SPI, initFrequency))
+    if (SD.begin(PIN_SD_CS, sdSpi, initFrequency))
     {
       uint8_t cardType = SD.cardType();
 
